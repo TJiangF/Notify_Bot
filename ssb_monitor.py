@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import sys
@@ -8,6 +9,8 @@ import requests
 API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getProjectList"
 
 WEBHOOK = os.environ.get("WECOM_WEBHOOK", "")
+SERVERCHAN_KEY = os.environ.get("SERVERCHAN_SENDKEY", "")
+SERVERCHAN_HEARTBEAT = os.environ.get("SERVERCHAN_HEARTBEAT", "0").lower() in ("1", "true", "yes")
 COOKIE = os.environ.get("SSB_COOKIE", "")
 DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "14")
 DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "浦东新区")
@@ -115,11 +118,38 @@ def in_quiet_hours():
     return 0 <= now_bj().hour < 8
 
 
-def wecom(text):
-    if not WEBHOOK:
-        print("[no webhook] " + text)
-        return
+def send_wecom(text):
     requests.post(WEBHOOK, json={"msgtype": "text", "text": {"content": text}}, timeout=15)
+
+
+def send_serverchan(text):
+    lines = text.splitlines()
+    title = (lines[0] if lines else "保障房监控")[:32].strip() or "保障房监控"
+    key = SERVERCHAN_KEY
+    if key.startswith("sctp"):
+        m = re.match(r"sctp(\d+)t", key)
+        if not m:
+            print("Server酱 SendKey 格式错误")
+            return
+        url = f"https://{m.group(1)}.push.ft07.com/send/{key}.send"
+    else:
+        url = f"https://sctapi.ftqq.com/{key}.send"
+    try:
+        requests.post(url, data={"title": title, "desp": text}, timeout=15)
+    except Exception as e:
+        print("Server酱推送失败：", repr(e))
+
+
+def push(text, heartbeat=False):
+    sent = False
+    if WEBHOOK:
+        send_wecom(text)
+        sent = True
+    if SERVERCHAN_KEY and (not heartbeat or SERVERCHAN_HEARTBEAT):
+        send_serverchan(text)
+        sent = True
+    if not sent:
+        print("[no channel] " + text)
 
 
 def diff(state, cur):
@@ -209,14 +239,14 @@ def build_heartbeat(cur):
 
 def notify_error(state, err_type, text):
     if state.get(ERROR_KEY) != err_type:
-        wecom(text)
+        push(text)
         state[ERROR_KEY] = err_type
         save_state(state)
 
 
 def handle_recovered(state):
     if state.pop(ERROR_KEY, None) is not None:
-        wecom("✅ 保障房监控已恢复正常。")
+        push("✅ 保障房监控已恢复正常。")
 
 
 def run_once():
@@ -255,7 +285,7 @@ def run_once():
     handle_recovered(state)
 
     if FORCE_HEARTBEAT:
-        wecom(build_heartbeat(cur))
+        push(build_heartbeat(cur))
         update_state(state, cur)
         state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
         save_state(state)
@@ -265,16 +295,16 @@ def run_once():
     now = time.time()
     if baseline:
         print("首次运行，建立基线，共", len(cur), "个项目")
-        wecom(build_heartbeat(cur))
+        push(build_heartbeat(cur), heartbeat=True)
         state[HEARTBEAT_KEY] = now
     else:
         new, inc, dec, gone = diff(state, cur)
         msg = build_change_msg(new, inc, dec, gone)
         if msg:
-            wecom(msg)
+            push(msg)
             print("已推送变动：新增", len(new), "增", len(inc), "减", len(dec), "下架", len(gone))
         elif now - state.get(HEARTBEAT_KEY, 0) >= heartbeat_interval():
-            wecom(build_heartbeat(cur))
+            push(build_heartbeat(cur), heartbeat=True)
             state[HEARTBEAT_KEY] = now
             print("无变动，已推送心跳")
 

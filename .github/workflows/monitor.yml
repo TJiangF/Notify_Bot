@@ -34,6 +34,7 @@ jobs:
       - name: Run monitor
         env:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
           SSB_COOKIE: ${{ secrets.SSB_COOKIE }}
           SSB_STATE: ssb_state.json
           SSB_FORCE_HEARTBEAT: ${{ inputs.test }}
