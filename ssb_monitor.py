@@ -12,7 +12,7 @@ COOKIE = os.environ.get("SSB_COOKIE", "")
 DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "14")
 DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "浦东新区")
 KEYWORDS = [k.strip() for k in os.environ.get(
-    "SSB_KEYWORDS", "森兰,中铁,桂竹,海上,西派,海华智").split(",") if k.strip()]
+    "SSB_KEYWORDS", "森兰,中铁,桂竹,海上,西派,海华智,万安里").split(",") if k.strip()]
 STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
 FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
