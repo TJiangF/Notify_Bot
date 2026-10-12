@@ -1,0 +1,47 @@
+name: ssb-monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ssb-monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Run monitor
+        env:
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          SSB_COOKIE: ${{ secrets.SSB_COOKIE }}
+          SSB_KEYWORDS: ${{ secrets.SSB_KEYWORDS }}
+          SSB_STATE: ssb_state.json
+        run: python ssb_monitor.py --once
+
+      - name: Persist state
+        run: |
+          git config user.name "ssb-bot"
+          git config user.email "ssb-bot@users.noreply.github.com"
+          git add ssb_state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "update state [skip ci]"
+            git push
+          else
+            echo "state unchanged, nothing to commit"
+          fi
