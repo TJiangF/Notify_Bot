@@ -15,6 +15,7 @@ KEYWORDS = [k.strip() for k in os.environ.get(
     "SSB_KEYWORDS", "森兰,中铁,桂竹,海上,西派,海华智").split(",") if k.strip()]
 STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
+FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
 
 IGNORE = {
     "4594": "森兰星遇公寓(新展城店)",
@@ -245,6 +246,14 @@ def run_once():
         return
 
     handle_recovered(state)
+
+    if FORCE_HEARTBEAT:
+        wecom(build_heartbeat(cur))
+        update_state(state, cur)
+        state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
+        save_state(state)
+        print("已按测试开关强制发送心跳")
+        return
 
     now = time.time()
     if baseline:

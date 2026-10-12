@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      test:
+        description: "强制发送一次心跳（测试用）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -31,6 +36,7 @@ jobs:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           SSB_COOKIE: ${{ secrets.SSB_COOKIE }}
           SSB_STATE: ssb_state.json
+          SSB_FORCE_HEARTBEAT: ${{ inputs.test }}
         run: python ssb_monitor.py --once
 
       - name: Persist state
