@@ -30,7 +30,6 @@ jobs:
         env:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           SSB_COOKIE: ${{ secrets.SSB_COOKIE }}
-          SSB_KEYWORDS: ${{ secrets.SSB_KEYWORDS }}
           SSB_STATE: ssb_state.json
         run: python ssb_monitor.py --once
 

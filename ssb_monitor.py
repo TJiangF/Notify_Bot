@@ -2,17 +2,24 @@ import os
 import json
 import time
 import sys
+from datetime import datetime, timezone, timedelta
 import requests
 
 API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getProjectList"
 
 WEBHOOK = os.environ.get("WECOM_WEBHOOK", "")
 COOKIE = os.environ.get("SSB_COOKIE", "")
-KEYWORDS = [k.strip() for k in os.environ.get("SSB_KEYWORDS", "").split(",") if k.strip()]
-INTERVAL = int(os.environ.get("SSB_INTERVAL", "300"))
+DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "14")
+DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "浦东新区")
+PRIORITY = [k.strip() for k in os.environ.get(
+    "SSB_PRIORITY", "森兰,海上,西派,海华").split(",") if k.strip()]
 STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
+SUMMARY_INTERVAL = int(os.environ.get("SSB_SUMMARY_INTERVAL", "7200"))
+
 AUTH_FLAG = "__auth_failed__"
+SUMMARY_KEY = "__last_summary__"
+SCOPE_KEY = "__scope__"
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -33,10 +40,10 @@ class AuthError(Exception):
     pass
 
 
-def fetch(keyword):
+def fetch_all():
     param = {
-        "districtId": "", "doorType": "", "rentHigh": "", "rentLow": "",
-        "searchWord": keyword, "street": [], "supplyWay": "",
+        "districtId": DISTRICT_ID, "doorType": "", "rentHigh": "", "rentLow": "",
+        "searchWord": "", "street": [], "supplyWay": "",
         "ringRdId": "", "orderBy": "", "isAsc": True,
     }
     out = []
@@ -46,7 +53,7 @@ def fetch(keyword):
             {"pageNo": page, "pageSize": PAGE_SIZE, "param": param},
             ensure_ascii=False,
         )}
-        r = requests.post(API, headers=HEADERS, data=data, timeout=20)
+        r = requests.post(API, headers=HEADERS, data=data, timeout=25)
         r.raise_for_status()
         j = r.json()
         if "data" not in j:
@@ -74,53 +81,105 @@ def save_state(s):
         json.dump(s, f, ensure_ascii=False, indent=2)
 
 
-def is_baseline(state):
-    return not any(not str(k).startswith("__") for k in state)
+def meta(state, key, default=None):
+    return state.get(key, default)
+
+
+def project_items(state):
+    return {k: v for k, v in state.items() if not str(k).startswith("__")}
+
+
+def is_priority(name):
+    return any(k in (name or "") for k in PRIORITY)
+
+
+def star(name):
+    return "⭐" if is_priority(name) else "・"
 
 
 def wecom(text):
     if not WEBHOOK:
         print("[no webhook] " + text)
         return
-    requests.post(
-        WEBHOOK,
-        json={"msgtype": "text", "text": {"content": text}},
-        timeout=15,
-    )
+    requests.post(WEBHOOK, json={"msgtype": "text", "text": {"content": text}}, timeout=15)
 
 
-def fmt(it):
-    return (
-        f"项目：{it.get('projectName')}\n"
-        f"地址：{it.get('projectLocation')}\n"
-        f"区域：{it.get('districtName')} / {it.get('ringRdName')}\n"
-        f"户型：{it.get('rentDoorTypeName')}\n"
-        f"租金：{it.get('rentLow')} ~ {it.get('rentHigh')} 元\n"
-        f"在线房源：{it.get('onlineFlatNum')} 套（总共 {it.get('totalFlatNum')}）\n"
-        f"供应时间：{it.get('concentRateSupplyStartDay')} ~ {it.get('concentRateSupplyEndDay')}\n"
-        f"电话：{it.get('projectTel')}"
-    )
+def diff(state, cur):
+    cur_map = {str(it["projectId"]): it for it in cur}
+    old = project_items(state)
+    new, inc, dec, gone = [], [], [], []
+    for pid, it in cur_map.items():
+        online = it.get("onlineFlatNum") or 0
+        prev = old.get(pid)
+        if prev is None:
+            new.append((it, None, online))
+        else:
+            po = prev.get("online", 0)
+            if online > po:
+                inc.append((it, po, online))
+            elif online < po:
+                dec.append((it, po, online))
+    for pid, prev in old.items():
+        if pid not in cur_map:
+            gone.append(prev)
+    return new, inc, dec, gone
 
 
-def check_once(state, baseline=False):
-    for kw in KEYWORDS or [""]:
-        for it in fetch(kw):
-            pid = str(it.get("projectId"))
-            online = it.get("onlineFlatNum") or 0
-            prev = state.get(pid)
-            if prev is None:
-                state[pid] = {"online": online, "name": it.get("projectName")}
-                if not baseline and os.environ.get("SSB_NOTIFY_FIRST") != "1":
-                    wecom("【保障房·新项目】\n" + fmt(it))
-            elif online > prev.get("online", 0):
-                diff = online - prev.get("online", 0)
-                state[pid]["online"] = online
-                wecom(f"【保障房·房源增加 +{diff}】\n" + fmt(it))
+def update_state(state, cur):
+    for k in list(state.keys()):
+        if not str(k).startswith("__"):
+            del state[k]
+    for it in cur:
+        state[str(it["projectId"])] = {
+            "online": it.get("onlineFlatNum") or 0,
+            "total": it.get("totalFlatNum") or 0,
+            "name": it.get("projectName"),
+        }
+
+
+def build_change_msg(new, inc, dec, gone):
+    lines = [f"【{DISTRICT_NAME}保障房 · 变动】"]
+    if new:
+        lines.append(f"🆕 新增项目（{len(new)}）")
+        for it, _, now in new:
+            lines.append(f"{star(it['projectName'])} {it['projectName']}：在线 {now} 套（共 {it.get('totalFlatNum')}）")
+    if inc:
+        lines.append(f"➕ 房源增加（{len(inc)}）")
+        for it, po, now in inc:
+            lines.append(f"{star(it['projectName'])} {it['projectName']}：{po} → {now}（+{now - po}）")
+    if dec:
+        lines.append(f"➖ 房源减少（{len(dec)}）")
+        for it, po, now in dec:
+            lines.append(f"{star(it['projectName'])} {it['projectName']}：{po} → {now}（{now - po}）")
+    if gone:
+        lines.append(f"❌ 下架/消失（{len(gone)}）")
+        for prev in gone:
+            lines.append(f"・ {prev.get('name')}（原在线 {prev.get('online')} 套）")
+    return "\n".join(lines) if (new or inc or dec or gone) else None
+
+
+def build_summary(cur):
+    total_online = sum((it.get("onlineFlatNum") or 0) for it in cur)
+    lines = [
+        f"【{DISTRICT_NAME}保障房 · 定时汇总】",
+        f"时间：{datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')}",
+        f"项目数：{len(cur)} 个",
+        f"在线房源总数：{total_online} 套",
+        "",
+        "重点关注：",
+    ]
+    pr = [it for it in cur if is_priority(it.get("projectName"))]
+    if pr:
+        for it in sorted(pr, key=lambda x: -(x.get("onlineFlatNum") or 0)):
+            lines.append(f"⭐ {it['projectName']}：{it.get('onlineFlatNum')} 套")
+    else:
+        lines.append("  （暂无匹配 " + "/".join(PRIORITY) + " 的房源）")
+    return "\n".join(lines)
 
 
 def handle_auth_error(state):
     if not state.get(AUTH_FLAG):
-        wecom("⚠️ 保障房监控 Cookie 已失效，请重新登录随申办抓取新的 Cookie 更新。")
+        wecom("⚠️ 保障房监控 Cookie 已失效，请重新登录随申办抓取新的 Cookie 更新 SSB_COOKIE。")
         state[AUTH_FLAG] = True
         save_state(state)
 
@@ -132,36 +191,48 @@ def handle_recovered(state):
 
 def run_once():
     state = load_state()
-    baseline = is_baseline(state)
+    baseline = not project_items(state)
     try:
-        check_once(state, baseline)
-        handle_recovered(state)
-        save_state(state)
-        print("完成一次检查，共跟踪", len(state), "个项目")
+        cur = fetch_all()
     except AuthError as e:
         print("Cookie 失效：", e)
         handle_auth_error(state)
+        return
+    except Exception as e:
+        print("抓取失败：", repr(e))
+        return
+
+    if not cur:
+        print("返回空列表，跳过本轮")
+        return
+
+    handle_recovered(state)
+
+    if baseline:
+        print("首次运行，建立基线，共", len(cur), "个项目")
+    else:
+        new, inc, dec, gone = diff(state, cur)
+        msg = build_change_msg(new, inc, dec, gone)
+        if msg:
+            wecom(msg)
+            print("已推送变动：新增", len(new), "增", len(inc), "减", len(dec), "下架", len(gone))
+
+    update_state(state, cur)
+
+    now = time.time()
+    if baseline or now - state.get(SUMMARY_KEY, 0) >= SUMMARY_INTERVAL:
+        wecom(build_summary(cur))
+        state[SUMMARY_KEY] = now
+        print("已推送汇总")
+
+    state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
+    save_state(state)
 
 
 def run_loop():
-    state = load_state()
-    baseline = is_baseline(state)
-    wecom("保障房监控已启动，关键词：" + (", ".join(KEYWORDS) or "全部"))
     while True:
-        try:
-            check_once(state, baseline)
-            handle_recovered(state)
-            save_state(state)
-            if baseline:
-                print("已建立基线，共", len(state), "个项目，后续仅推送变化")
-                baseline = False
-            print(time.strftime("%H:%M:%S"), "检查完成，共跟踪", len(state), "个项目")
-        except AuthError as e:
-            print("Cookie 失效：", e)
-            handle_auth_error(state)
-        except Exception as e:
-            print(time.strftime("%H:%M:%S"), "错误：", repr(e))
-        time.sleep(INTERVAL)
+        run_once()
+        time.sleep(int(os.environ.get("SSB_INTERVAL", "300")))
 
 
 def main():
