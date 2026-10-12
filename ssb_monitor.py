@@ -111,6 +111,10 @@ def heartbeat_interval():
     return 3600 if 8 <= h < 20 else 7200
 
 
+def in_quiet_hours():
+    return 0 <= now_bj().hour < 8
+
+
 def wecom(text):
     if not WEBHOOK:
         print("[no webhook] " + text)
@@ -216,6 +220,9 @@ def handle_recovered(state):
 
 
 def run_once():
+    if in_quiet_hours() and not FORCE_HEARTBEAT:
+        print("夜间静默时段（北京时间 00:00-08:00），跳过本次")
+        return
     state = load_state()
     baseline = not project_items(state)
     try:
