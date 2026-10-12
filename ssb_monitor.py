@@ -11,14 +11,18 @@ WEBHOOK = os.environ.get("WECOM_WEBHOOK", "")
 COOKIE = os.environ.get("SSB_COOKIE", "")
 DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "14")
 DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "浦东新区")
-PRIORITY = [k.strip() for k in os.environ.get(
-    "SSB_PRIORITY", "森兰,海上,西派,海华").split(",") if k.strip()]
+KEYWORDS = [k.strip() for k in os.environ.get(
+    "SSB_KEYWORDS", "森兰,中铁,桂竹,海上,西派,海华智").split(",") if k.strip()]
 STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
-SUMMARY_INTERVAL = int(os.environ.get("SSB_SUMMARY_INTERVAL", "7200"))
+
+IGNORE = {
+    "4594": "森兰星遇公寓(新展城店)",
+    "3025": "城家高级公寓（森兰洲海路地铁站店）",
+}
 
 AUTH_FLAG = "__auth_failed__"
-SUMMARY_KEY = "__last_summary__"
+HEARTBEAT_KEY = "__last_heartbeat__"
 SCOPE_KEY = "__scope__"
 
 UA = (
@@ -81,20 +85,29 @@ def save_state(s):
         json.dump(s, f, ensure_ascii=False, indent=2)
 
 
-def meta(state, key, default=None):
-    return state.get(key, default)
-
-
 def project_items(state):
     return {k: v for k, v in state.items() if not str(k).startswith("__")}
 
 
-def is_priority(name):
-    return any(k in (name or "") for k in PRIORITY)
+def match_keyword(name):
+    return [k for k in KEYWORDS if k in (name or "")]
+
+
+def is_keyword(name):
+    return bool(match_keyword(name))
 
 
 def star(name):
-    return "⭐" if is_priority(name) else "・"
+    return "⭐" if is_keyword(name) else "・"
+
+
+def now_bj():
+    return datetime.now(timezone(timedelta(hours=8)))
+
+
+def heartbeat_interval():
+    h = now_bj().hour
+    return 3600 if 8 <= h < 20 else 7200
 
 
 def wecom(text):
@@ -109,6 +122,8 @@ def diff(state, cur):
     old = project_items(state)
     new, inc, dec, gone = [], [], [], []
     for pid, it in cur_map.items():
+        if pid in IGNORE:
+            continue
         online = it.get("onlineFlatNum") or 0
         prev = old.get(pid)
         if prev is None:
@@ -120,6 +135,8 @@ def diff(state, cur):
             elif online < po:
                 dec.append((it, po, online))
     for pid, prev in old.items():
+        if pid in IGNORE:
+            continue
         if pid not in cur_map:
             gone.append(prev)
     return new, inc, dec, gone
@@ -138,7 +155,14 @@ def update_state(state, cur):
 
 
 def build_change_msg(new, inc, dec, gone):
+    kw_new = [it for it, _, _ in new if is_keyword(it.get("projectName"))]
     lines = [f"【{DISTRICT_NAME}保障房 · 变动】"]
+    if kw_new:
+        lines.append("🔔 关键字新房源（含 " + "/".join(
+            sorted({k for it in kw_new for k in match_keyword(it.get('projectName'))})) + "）：")
+        for it in kw_new:
+            lines.append(f"⭐ {it['projectName']}：在线 {it.get('onlineFlatNum')} 套（共 {it.get('totalFlatNum')}）")
+        lines.append("")
     if new:
         lines.append(f"🆕 新增项目（{len(new)}）")
         for it, _, now in new:
@@ -158,22 +182,23 @@ def build_change_msg(new, inc, dec, gone):
     return "\n".join(lines) if (new or inc or dec or gone) else None
 
 
-def build_summary(cur):
+def build_heartbeat(cur):
     total_online = sum((it.get("onlineFlatNum") or 0) for it in cur)
+    hits = [it for it in cur if is_keyword(it.get("projectName"))]
     lines = [
-        f"【{DISTRICT_NAME}保障房 · 定时汇总】",
-        f"时间：{datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')}",
-        f"项目数：{len(cur)} 个",
-        f"在线房源总数：{total_online} 套",
+        f"【{DISTRICT_NAME}保障房 · 定时心跳】",
+        f"时间：{now_bj().strftime('%Y-%m-%d %H:%M')}",
+        f"项目数：{len(cur)} 个 ｜ 在线房源：{total_online} 套",
+        f"关键字：{'、'.join(KEYWORDS)}",
         "",
-        "重点关注：",
+        "关键字房源：",
     ]
-    pr = [it for it in cur if is_priority(it.get("projectName"))]
-    if pr:
-        for it in sorted(pr, key=lambda x: -(x.get("onlineFlatNum") or 0)):
-            lines.append(f"⭐ {it['projectName']}：{it.get('onlineFlatNum')} 套")
+    if hits:
+        for it in sorted(hits, key=lambda x: -(x.get("onlineFlatNum") or 0)):
+            tag = "（已忽略）" if str(it["projectId"]) in IGNORE else ""
+            lines.append(f"⭐ {it['projectName']}：{it.get('onlineFlatNum')} 套{tag}")
     else:
-        lines.append("  （暂无匹配 " + "/".join(PRIORITY) + " 的房源）")
+        lines.append("  （暂无命中）")
     return "\n".join(lines)
 
 
@@ -208,23 +233,23 @@ def run_once():
 
     handle_recovered(state)
 
+    now = time.time()
     if baseline:
         print("首次运行，建立基线，共", len(cur), "个项目")
+        wecom(build_heartbeat(cur))
+        state[HEARTBEAT_KEY] = now
     else:
         new, inc, dec, gone = diff(state, cur)
         msg = build_change_msg(new, inc, dec, gone)
         if msg:
             wecom(msg)
             print("已推送变动：新增", len(new), "增", len(inc), "减", len(dec), "下架", len(gone))
+        elif now - state.get(HEARTBEAT_KEY, 0) >= heartbeat_interval():
+            wecom(build_heartbeat(cur))
+            state[HEARTBEAT_KEY] = now
+            print("无变动，已推送心跳")
 
     update_state(state, cur)
-
-    now = time.time()
-    if baseline or now - state.get(SUMMARY_KEY, 0) >= SUMMARY_INTERVAL:
-        wecom(build_summary(cur))
-        state[SUMMARY_KEY] = now
-        print("已推送汇总")
-
     state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
     save_state(state)
 
