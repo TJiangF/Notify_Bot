@@ -21,7 +21,7 @@ IGNORE = {
     "3025": "城家高级公寓（森兰洲海路地铁站店）",
 }
 
-AUTH_FLAG = "__auth_failed__"
+ERROR_KEY = "__last_error__"
 HEARTBEAT_KEY = "__last_heartbeat__"
 SCOPE_KEY = "__scope__"
 
@@ -202,15 +202,15 @@ def build_heartbeat(cur):
     return "\n".join(lines)
 
 
-def handle_auth_error(state):
-    if not state.get(AUTH_FLAG):
-        wecom("⚠️ 保障房监控 Cookie 已失效，请重新登录随申办抓取新的 Cookie 更新 SSB_COOKIE。")
-        state[AUTH_FLAG] = True
+def notify_error(state, err_type, text):
+    if state.get(ERROR_KEY) != err_type:
+        wecom(text)
+        state[ERROR_KEY] = err_type
         save_state(state)
 
 
 def handle_recovered(state):
-    if state.pop(AUTH_FLAG, None):
+    if state.pop(ERROR_KEY, None) is not None:
         wecom("✅ 保障房监控已恢复正常。")
 
 
@@ -221,14 +221,27 @@ def run_once():
         cur = fetch_all()
     except AuthError as e:
         print("Cookie 失效：", e)
-        handle_auth_error(state)
+        notify_error(
+            state, "auth",
+            "⚠️ 保障房监控登录信息已失效（Cookie 过期），请重新登录随申办抓取新的 Cookie，"
+            "并更新仓库 Secret「SSB_COOKIE」。",
+        )
         return
     except Exception as e:
         print("抓取失败：", repr(e))
+        notify_error(
+            state, "fetch",
+            f"⚠️ 保障房监控获取数据失败：{type(e).__name__}: {e}\n"
+            f"请检查（可能是网络问题或接口变动）。",
+        )
         return
 
     if not cur:
         print("返回空列表，跳过本轮")
+        notify_error(
+            state, "empty",
+            "⚠️ 保障房监控返回空数据，可能接口变动或登录异常，请检查。",
+        )
         return
 
     handle_recovered(state)
