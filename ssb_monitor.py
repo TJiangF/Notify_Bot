@@ -26,8 +26,9 @@ IGNORE = {
 }
 
 ERROR_KEY = "__last_error__"
-HEARTBEAT_KEY = "__last_heartbeat__"
+HEARTBEAT_KEY = "__last_heartbeat_hour__"
 SCOPE_KEY = "__scope__"
+HEARTBEAT_HOURS = set(range(8, 21)) | {22}
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -107,11 +108,6 @@ def star(name):
 
 def now_bj():
     return datetime.now(timezone(timedelta(hours=8)))
-
-
-def heartbeat_interval():
-    h = now_bj().hour
-    return 3600 if 8 <= h < 20 else 7200
 
 
 def in_quiet_hours():
@@ -296,21 +292,22 @@ def run_once():
         print("已按测试开关强制发送心跳")
         return
 
-    now = time.time()
+    bj = now_bj()
+    stamp = bj.strftime("%Y-%m-%d %H")
+
     if baseline:
         print("首次运行，建立基线，共", len(cur), "个项目")
-        push(build_heartbeat(cur), heartbeat=True)
-        state[HEARTBEAT_KEY] = now
     else:
         new, inc, dec, gone = diff(state, cur)
         msg = build_change_msg(new, inc, dec, gone)
         if msg:
             push(msg)
             print("已推送变动：新增", len(new), "增", len(inc), "减", len(dec), "下架", len(gone))
-        elif now - state.get(HEARTBEAT_KEY, 0) >= heartbeat_interval():
-            push(build_heartbeat(cur), heartbeat=True)
-            state[HEARTBEAT_KEY] = now
-            print("无变动，已推送心跳")
+
+    if bj.hour in HEARTBEAT_HOURS and state.get(HEARTBEAT_KEY) != stamp:
+        push(build_heartbeat(cur), heartbeat=True)
+        state[HEARTBEAT_KEY] = stamp
+        print("整点心跳已推送:", stamp)
 
     update_state(state, cur)
     state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
