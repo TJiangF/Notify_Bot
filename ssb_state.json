@@ -703,6 +703,5 @@
     "online": 1451,
     "total": 1451,
     "name": "浦发有家·康涵社区"
-  },
-  "__err_sb__": "⚠️ 随申办获取数据失败：ReadTimeout: HTTPSConnectionPool(host='zwdt.sh.gov.cn', port=443): Read timed out. (read timeout=25)"
+  }
 }
