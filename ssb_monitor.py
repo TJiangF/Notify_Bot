@@ -206,7 +206,7 @@ def push(text, heartbeat=False):
 def diff(state, cur):
     cur_map = {str(it["projectId"]): it for it in cur}
     old = project_items(state)
-    new, inc, dec, gone = [], [], [], []
+    new, inc, dec, gone, renamed = [], [], [], [], []
     for pid, it in cur_map.items():
         if pid in IGNORE:
             continue
@@ -220,12 +220,15 @@ def diff(state, cur):
                 inc.append((it, po, online))
             elif online < po:
                 dec.append((it, po, online))
+            oldname = prev.get("name")
+            if oldname and (it.get("projectName") or "") != oldname:
+                renamed.append((it, oldname))
     for pid, prev in old.items():
         if pid in IGNORE:
             continue
         if pid not in cur_map:
             gone.append(prev)
-    return new, inc, dec, gone
+    return new, inc, dec, gone, renamed
 
 
 def update_state(state, cur):
@@ -243,14 +246,18 @@ def update_state(state, cur):
 def pd_diff(state, cur):
     old = state.get(PD_PROJECTS_KEY, {})
     cur_map = {str(it["projectId"]): it for it in cur}
-    new, gone = [], []
+    new, gone, renamed = [], [], []
     for pid, it in cur_map.items():
         if pid not in old:
             new.append(it)
+        else:
+            oldname = old[pid].get("name")
+            if oldname and (it.get("villageProjectName") or "") != oldname:
+                renamed.append((it, oldname))
     for pid, prev in old.items():
         if pid not in cur_map:
             gone.append(prev)
-    return new, gone
+    return new, gone, renamed
 
 
 def pd_update(state, cur):
@@ -272,7 +279,7 @@ def section(title, lines):
     return f"\n━━ {title} ━━\n" + "\n".join(lines) + "\n"
 
 
-def sb_change_lines(new, inc, dec, gone):
+def sb_change_lines(new, inc, dec, gone, renamed):
     lines = []
     kw_new = [it for it, _, _ in new if is_keyword(it.get("projectName"))]
     if kw_new:
@@ -292,6 +299,10 @@ def sb_change_lines(new, inc, dec, gone):
         lines.append(f"➖ 房源减少（{len(dec)}）")
         for it, po, now in dec:
             lines.append(f"{star(it['projectName'])} {it['projectName']}：{po} → {now}")
+    if renamed:
+        lines.append(f"✏️ 项目改名（{len(renamed)}）")
+        for it, oldname in renamed:
+            lines.append(f"{star(it['projectName'])} {oldname} → {it['projectName']}")
     if gone:
         lines.append(f"❌ 下架/消失（{len(gone)}）")
         for prev in gone:
@@ -312,7 +323,7 @@ def sb_heartbeat_lines(cur):
     return lines
 
 
-def pd_change_lines(new, gone):
+def pd_change_lines(new, gone, renamed):
     lines = []
     if new:
         lines.append(f"🆕 新增房源（{len(new)}）")
@@ -321,6 +332,12 @@ def pd_change_lines(new, gone):
             lines.append(f"   地址：{it.get('LOCATION')}")
             lines.append(f"   电话：{it.get('lxdh')}")
             lines.append(f"   状态：{it.get('projectStatusName')}，可租 {it.get('kzts')} 套")
+    if renamed:
+        lines.append(f"✏️ 项目改名（{len(renamed)}）")
+        for it, oldname in renamed:
+            lines.append(f"・ {oldname} → {it.get('villageProjectName')}")
+            lines.append(f"   地址：{it.get('LOCATION')}")
+            lines.append(f"   电话：{it.get('lxdh')}")
     if gone:
         lines.append(f"➖ 减少房源（{len(gone)}）")
         for prev in gone:
@@ -426,8 +443,8 @@ def run_once():
 
     if pd is not None:
         if not pd_baseline:
-            new, gone = pd_diff(state, pd)
-            pd_lines = pd_change_lines(new, gone)
+            new, gone, renamed = pd_diff(state, pd)
+            pd_lines = pd_change_lines(new, gone, renamed)
             change_sections += section("明珠在线", pd_lines)
         pd_update(state, pd)
 
