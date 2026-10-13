@@ -251,7 +251,11 @@ def handle_recovered(state):
 
 def run_once():
     if in_quiet_hours() and not FORCE_HEARTBEAT:
-        print("夜间静默时段（北京时间 00:00-08:00），跳过本次")
+        try:
+            n = len(fetch_all())
+            print(f"夜间静默（00:00-08:00）：已保活会话，{n} 个项目，本次不推送")
+        except Exception as e:
+            print("夜间静默：保活请求失败", repr(e))
         return
     state = load_state()
     baseline = not project_items(state)
