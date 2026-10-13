@@ -2,7 +2,7 @@
   "__last_summary__": 1791816995.4367354,
   "__scope__": "district:14",
   "__last_heartbeat__": 1791860658.9770951,
-  "__last_heartbeat_hour__": "2026-10-13 16",
+  "__last_heartbeat_hour__": "2026-10-13 17",
   "__pd_projects__": {
     "213": {
       "name": "浦发有家进贤社区",
@@ -30,7 +30,7 @@
       "location": "康泽路86弄1-37号",
       "phone": "17317180917",
       "status": "运营",
-      "kzts": 2341
+      "kzts": 2342
     },
     "197": {
       "name": "浦发有家浦馨社区",
@@ -383,7 +383,6 @@
       "kzts": 0
     }
   },
-  "__err_pd__": "⚠️ 浦东人才公寓登录信息已失效，请重新登录该网站并更新 Secret「PD_COOKIE」「PD_CSRF」。",
   "4739": {
     "online": 3180,
     "total": 3180,
