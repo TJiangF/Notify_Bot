@@ -300,6 +300,51 @@ Notify_Bot/
 
 ---
 
+## 六之二、让定时更可靠：外部定时器触发（重要）
+
+GitHub Actions 自带的 `schedule` **非常不可靠**：官方明确说明会延迟（高峰尤甚），延迟过久甚至当天不触发，高频（如每 5 分钟）尤其容易丢。实测本仓库曾数小时不运行。
+
+因此推荐用**外部定时服务**每 5 分钟调用 GitHub API 主动触发（保留 `schedule` 作为兜底）。
+
+### 1. 生成 Token
+
+细粒度 Token（Settings → Developer settings → Fine-grained tokens）：
+- Repository access：Only select repositories → `Notify_Bot`
+- Permissions：**Actions → Read and write**
+
+（或经典 Token 勾选 `workflow` 权限。）
+
+### 2. 用 cron-job.org 定时触发
+
+注册 `https://cron-job.org`（免费）→ Create cronjob：
+
+| 项 | 值 |
+|---|---|
+| URL | `https://api.github.com/repos/TJiangF/Notify_Bot/actions/workflows/monitor.yml/dispatches` |
+| Method | `POST` |
+| Schedule | Every 5 minutes |
+| Header | `Authorization: Bearer <你的Token>` |
+| Header | `Accept: application/vnd.github+json` |
+| Header | `Content-Type: application/json` |
+| Request body | `{"ref":"main"}` |
+
+保存后即可稳定触发（TEST RUN 返回 204 表示成功）。
+
+### 3. 手动验证
+
+```bash
+curl -i -X POST \
+  -H "Authorization: Bearer <你的Token>" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/TJiangF/Notify_Bot/actions/workflows/monitor.yml/dispatches \
+  -d '{"ref":"main"}'
+# HTTP/2 204 = 成功
+```
+
+> Token 只放外部服务里，注意保密，用完可随时撤销。
+
+---
+
 ## 七、日常维护
 
 ### 修改关键字 / 忽略名单 / 监控范围
