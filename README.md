@@ -12,7 +12,8 @@
 
 | 功能 | 说明 |
 |---|---|
-| 定时轮询 | 每 **5 分钟**查询一次浦东新区保障房房源 |
+| 数据源 | **随申办**（浦东新区保障性租赁住房）+ **浦东人才公寓**（pdrcgy.pudong.gov.cn），合并到一条消息 |
+| 定时轮询 | 每 **5 分钟**查询一次两个数据源 |
 | 变动告警 | 项目**新增 / 房源增加 / 房源减少 / 下架**时推送（**随时**，不受整点限制） |
 | 关键字告警 | 命中关键字的新增房源会**置顶单独标出**（🔔），普通命中用 ⭐，一并随时推送 |
 | 心跳通知 | **8:00–20:00 每小时整点后推送一次；22:00 再推送一次**（内容为项目数/在线总数/关键字房源） |
@@ -284,7 +285,9 @@ Notify_Bot/
 |---|---|
 | `WECOM_WEBHOOK` | 企业微信机器人 Webhook |
 | `SERVERCHAN_SENDKEY` | （可选）Server酱 SendKey，用于推送到普通微信 |
-| `SSB_COOKIE` | `SESSION=...; shspace_auth_token=...` |
+| `SSB_COOKIE` | 随申办 Cookie：`SESSION=...; shspace_auth_token=...` |
+| `PD_COOKIE` | 浦东人才公寓 Cookie：`JSESSIONID=...; SERVERID=...` |
+| `PD_CSRF` | 浦东人才公寓 CSRF：请求头 `x-csrf-token` 的值 |
 
 ### 3. 手动触发测试
 
@@ -401,7 +404,37 @@ python3 ssb_monitor.py
 
 ---
 
-## 九、常见问题
+## 九、数据源二：浦东人才公寓（pdrcgy.pudong.gov.cn）
+
+这是南康 GIS 的房源地图应用，**需要登录**。
+
+- **接口**：`POST https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx/getProjectAndHouse.html`
+- **鉴权**：请求头需同时带
+  - `Cookie`（含 `JSESSIONID`、`SERVERID`）
+  - `x-csrf-token`
+  - 缺任一 → `403`
+- **请求体**：JSON，关键是 `"type":2` 和 `"page_param":{"PAGE":1,"LIMIT":500}`（LIMIT 设大一次取全）
+- **响应**：`project1/project2/project3` 是三种排序的同一批项目，**按 `projectId` 去重**；`xm_total` 为总数
+- **关键字段**：`projectId`、`villageProjectName`、`projectStatusName`（待供应/运营/在建）、`kzts`（可租套数）、`releaseTime`、`xmfyzts`（各户型套数）
+
+### 获取 Cookie 与 CSRF（重新登录时）
+
+1. Chrome 打开 `https://pdrcgy.pudong.gov.cn/api/`，**登录**（可能需要图片验证码）
+2. F12 → Network → 勾 Fetch/XHR → 刷新房源页
+3. 找到 `getProjectAndHouse.html` 请求 → 右键 **Copy → Copy as cURL (bash)**
+4. 从 cURL 里取出：
+   - `-b` 后面的是 `PD_COOKIE`
+   - `-H 'x-csrf-token: ...'` 的是 `PD_CSRF`
+
+### 注意
+
+- **验证码只在登录时**。脚本不自动登录（不做验证码识别、不保存你的账号密码），只复用你登录后的会话并每 5 分钟保活。
+- 会话疑似空闲即失效，靠轮询保活；失效时脚本会推送提醒，重新登录更新 `PD_COOKIE`/`PD_CSRF` 即可。
+- 该站已有关键字命中（如 `森兰星遇S万安里店`），首次运行会作为基线，只报之后的新增与变化。
+
+---
+
+## 十、常见问题
 
 **Q：GitHub Actions 报 SSL / 超时？**
 A：GitHub 运行在国外 IP，个别时候访问 gov 站点慢或被限。若持续失败，改用国内云服务器或家里常开设备运行 `ssb_monitor.py`。
