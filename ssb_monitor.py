@@ -243,23 +243,14 @@ def update_state(state, cur):
 def pd_diff(state, cur):
     old = state.get(PD_PROJECTS_KEY, {})
     cur_map = {str(it["projectId"]): it for it in cur}
-    new, gone, chg = [], [], []
+    new, gone = [], []
     for pid, it in cur_map.items():
-        prev = old.get(pid)
-        if prev is None:
+        if pid not in old:
             new.append(it)
-        elif is_keyword(it.get("villageProjectName")):
-            changes = []
-            if (it.get("projectStatusName") or "") != (prev.get("status") or ""):
-                changes.append(f"状态 {prev.get('status')} → {it.get('projectStatusName')}")
-            if (it.get("kzts") or 0) != (prev.get("kzts") or 0):
-                changes.append(f"可租 {prev.get('kzts')} → {it.get('kzts')} 套")
-            if changes:
-                chg.append((it, changes))
     for pid, prev in old.items():
         if pid not in cur_map:
             gone.append(prev)
-    return new, gone, chg
+    return new, gone
 
 
 def pd_update(state, cur):
@@ -267,6 +258,8 @@ def pd_update(state, cur):
     for it in cur:
         d[str(it["projectId"])] = {
             "name": it.get("villageProjectName"),
+            "location": it.get("LOCATION"),
+            "phone": it.get("lxdh"),
             "status": it.get("projectStatusName"),
             "kzts": it.get("kzts") or 0,
         }
@@ -319,37 +312,26 @@ def sb_heartbeat_lines(cur):
     return lines
 
 
-def pd_change_lines(new, gone, chg):
+def pd_change_lines(new, gone):
     lines = []
-    kw_new = [it for it in new if is_keyword(it.get("villageProjectName"))]
-    if kw_new:
-        lines.append("🔔 关键字新项目：")
-        for it in kw_new:
-            lines.append(f"⭐ {it['villageProjectName']}：{it.get('projectStatusName')} 可租{it.get('kzts')}套")
     if new:
-        lines.append(f"🆕 新增项目（{len(new)}）")
+        lines.append(f"🆕 新增房源（{len(new)}）")
         for it in new:
-            lines.append(f"{star(it.get('villageProjectName'))} {it['villageProjectName']}：{it.get('projectStatusName')} 可租{it.get('kzts')}套")
-    if chg:
-        lines.append(f"🔄 关键字变化（{len(chg)}）")
-        for it, changes in chg:
-            lines.append(f"⭐ {it['villageProjectName']}：" + "；".join(changes))
+            lines.append(f"・ {it.get('villageProjectName')}")
+            lines.append(f"   地址：{it.get('LOCATION')}")
+            lines.append(f"   电话：{it.get('lxdh')}")
+            lines.append(f"   状态：{it.get('projectStatusName')}，可租 {it.get('kzts')} 套")
     if gone:
-        lines.append(f"❌ 下架（{len(gone)}）")
+        lines.append(f"➖ 减少房源（{len(gone)}）")
         for prev in gone:
             lines.append(f"・ {prev.get('name')}")
+            lines.append(f"   地址：{prev.get('location')}")
+            lines.append(f"   电话：{prev.get('phone')}")
     return lines
 
 
 def pd_heartbeat_lines(pd):
-    hits = [it for it in pd if is_keyword(it.get("villageProjectName"))]
-    lines = [f"项目数：{len(pd)} 个", "关键字："]
-    if hits:
-        for it in sorted(hits, key=lambda x: -(x.get("kzts") or 0)):
-            lines.append(f"⭐ {it['villageProjectName']}：【{it.get('projectStatusName')}】可租{it.get('kzts')}套")
-    else:
-        lines.append("  （暂无命中）")
-    return lines
+    return [f"房源项目数：{len(pd)} 个"]
 
 
 def notify_err(state, key, text):
@@ -422,7 +404,7 @@ def run_once():
             lines += ["【房源监控 · 测试心跳】", f"时间：{now_bj().strftime('%Y-%m-%d %H:%M')}"]
             lines += [section(f"随申办（{DISTRICT_NAME}）", sb_heartbeat_lines(cur))]
             if pd:
-                lines += [section("浦东人才公寓", pd_heartbeat_lines(pd))]
+                lines += [section("明珠在线", pd_heartbeat_lines(pd))]
         else:
             lines = ["【房源监控 · 测试心跳】无数据（可能登录失效）"]
         push("\n".join(lines))
@@ -444,9 +426,9 @@ def run_once():
 
     if pd is not None:
         if not pd_baseline:
-            new, gone, chg = pd_diff(state, pd)
-            pd_lines = pd_change_lines(new, gone, chg)
-            change_sections += section("浦东人才公寓", pd_lines)
+            new, gone = pd_diff(state, pd)
+            pd_lines = pd_change_lines(new, gone)
+            change_sections += section("明珠在线", pd_lines)
         pd_update(state, pd)
 
     if change_sections:
@@ -462,7 +444,7 @@ def run_once():
         if cur:
             lines += [section(f"随申办（{DISTRICT_NAME}）", sb_heartbeat_lines(cur))]
         if pd:
-            lines += [section("浦东人才公寓", pd_heartbeat_lines(pd))]
+            lines += [section("明珠在线", pd_heartbeat_lines(pd))]
         if cur or pd:
             push("\n".join(lines), heartbeat=True)
             state[HEARTBEAT_KEY] = stamp
