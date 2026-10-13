@@ -165,7 +165,11 @@ def in_quiet_hours():
 
 
 def send_wecom(text):
-    requests.post(WEBHOOK, json={"msgtype": "text", "text": {"content": text}}, timeout=15)
+    try:
+        r = requests.post(WEBHOOK, json={"msgtype": "text", "text": {"content": text}}, timeout=15)
+        print("WeCom响应:", r.text[:200])
+    except Exception as e:
+        print("WeCom推送异常:", repr(e))
 
 
 def send_serverchan(text):
@@ -181,7 +185,8 @@ def send_serverchan(text):
     else:
         url = f"https://sctapi.ftqq.com/{key}.send"
     try:
-        requests.post(url, data={"title": title, "desp": text}, timeout=15)
+        r = requests.post(url, data={"title": title, "desp": text}, timeout=15)
+        print("Server酱响应:", r.text[:200])
     except Exception as e:
         print("Server酱推送失败：", repr(e))
 
