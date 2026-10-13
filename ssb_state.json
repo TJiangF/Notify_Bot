@@ -1,7 +1,7 @@
 {
   "__last_summary__": 1791816995.4367354,
   "__scope__": "district:14",
-  "__last_heartbeat__": 1791817952.013651,
+  "__last_heartbeat__": 1791856661.801684,
   "4739": {
     "online": 3180,
     "total": 3180,
@@ -321,6 +321,5 @@
     "online": 1451,
     "total": 1451,
     "name": "浦发有家·康涵社区"
-  },
-  "__last_error__": "auth"
+  }
 }
