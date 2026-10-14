@@ -143,10 +143,24 @@ def build():
             ds.add(x["district"])
         return ds
 
-    all_districts = sorted(districts_of(ssb_ch) | districts_of(pd_ch))
-    filter_html = '<label><input type="checkbox" class="f-all" checked> 全部</label>' + "".join(
-        f'<label><input type="checkbox" class="f-d" value="{esc(d)}" checked> {esc(d)}</label>'
-        for d in all_districts)
+    def all_projects(latest):
+        ssb = latest["ssb"]
+        ssb_d = sorted({x["district"] for x in ssb})
+        ssb_filter = "".join(f'<label><input type="checkbox" class="ga" value="{esc(d)}"> {esc(d)}</label>' for d in ssb_d)
+        ssb_items = "".join(
+            f'<li data-d="{esc(x["district"])}"><b>{esc(x["name"])}</b>（{esc(x["district"])}）'
+            f'　在线 {x["online"]} 套　{esc(x.get("addr"))}　电话 {esc(x.get("tel"))}</li>'
+            for x in sorted(ssb, key=lambda a: (a["district"], -(a["online"] or 0))))
+        pd = latest["pd"]
+        pd_d = sorted({x["district"] for x in pd})
+        pd_filter = "".join(f'<label><input type="checkbox" class="ga" value="{esc(d)}"> {esc(d)}</label>' for d in pd_d)
+        pd_items = "".join(
+            f'<li data-d="{esc(x["district"])}"><b>{esc(x["name"])}</b>（{esc(x["district"])}）'
+            f'　可租 {x["kzts"]} 套　{esc(x.get("addr"))}　电话 {esc(x.get("tel"))} [{esc(x.get("status"))}]</li>'
+            for x in sorted(pd, key=lambda a: -(a["kzts"] or 0)))
+        return ssb_filter, ssb_items, pd_filter, pd_items
+
+    ssb_filter, ssb_items, pd_filter, pd_items = all_projects(latest)
 
     trend = []
     for s in snaps:
@@ -177,6 +191,9 @@ def build():
  .filters label{{font-size:13px;cursor:pointer;user-select:none;white-space:nowrap}}
  .filters input{{margin-right:4px;vertical-align:middle}}
  .grp{{margin:6px 0}}
+ .alllist{{margin:6px 0 2px;padding-left:22px}}
+ .alllist li{{font-size:13px;margin:3px 0;line-height:1.5}}
+ .emptyhint{{color:#999;font-size:13px;padding:8px 0}}
 </style></head><body><div class="wrap">
 <h1>上海房源变化报表</h1>
 <div class="sub">数据范围：{date_from} ~ {date_to}　｜　最新快照：{latest['date']}　｜　对比上一份快照</div>
@@ -195,11 +212,26 @@ def build():
 <table><thead><tr><th>行政区</th><th>项目数</th><th>可租套数</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
 <tbody>{pd_table}</tbody></table>
 
-<h2>最新变动明细（{date_to}）</h2>
+<h2>变动明细（{date_to}）</h2>
 <div class="box">
-<div class="filters">{filter_html}</div>
 {detail("随申办", ssb_ch)}
 {detail("明珠在线", pd_ch)}
+</div>
+
+<h2>全部房源明细</h2>
+<div class="box">
+<div class="allbox">
+<h3>随申办</h3>
+<div class="filters">{ssb_filter}</div>
+<div class="emptyhint">勾选上方行政区以显示对应房源</div>
+<ul class="alllist">{ssb_items}</ul>
+</div>
+<div class="allbox">
+<h3>明珠在线</h3>
+<div class="filters">{pd_filter}</div>
+<div class="emptyhint">勾选上方行政区以显示对应房源</div>
+<ul class="alllist">{pd_items}</ul>
+</div>
 </div>
 
 <h2>逐日趋势</h2>
@@ -207,30 +239,20 @@ def build():
 <tbody>{trend_table}</tbody></table>
 </div>
 <script>
-function applyFilter(){{
-  var checked = new Set([].slice.call(document.querySelectorAll('.f-d:checked')).map(function(x){{return x.value;}}));
-  document.querySelectorAll('li[data-d]').forEach(function(li){{
-    li.style.display = checked.has(li.getAttribute('data-d')) ? '' : 'none';
-  }});
-  document.querySelectorAll('.grp').forEach(function(g){{
-    var any = [].slice.call(g.querySelectorAll('li[data-d]')).some(function(li){{return li.style.display !== 'none';}});
-    g.style.display = any ? '' : 'none';
+function applyAll(){{
+  document.querySelectorAll('.allbox').forEach(function(box){{
+    var checked = new Set([].slice.call(box.querySelectorAll('input.ga:checked')).map(function(x){{return x.value;}}));
+    box.querySelectorAll('li[data-d]').forEach(function(li){{
+      li.style.display = checked.has(li.getAttribute('data-d')) ? '' : 'none';
+    }});
+    var hint = box.querySelector('.emptyhint');
+    if (hint) hint.style.display = checked.size > 0 ? 'none' : '';
   }});
 }}
-document.querySelectorAll('.f-all').forEach(function(el){{
-  el.addEventListener('change', function(){{
-    document.querySelectorAll('.f-d').forEach(function(x){{x.checked = el.checked;}});
-    applyFilter();
-  }});
+document.querySelectorAll('input.ga').forEach(function(el){{
+  el.addEventListener('change', applyAll);
 }});
-document.querySelectorAll('.f-d').forEach(function(el){{
-  el.addEventListener('change', function(){{
-    var all = [].slice.call(document.querySelectorAll('.f-d'));
-    document.querySelector('.f-all').checked = all.every(function(x){{return x.checked;}});
-    applyFilter();
-  }});
-}});
-applyFilter();
+applyAll();
 </script>
 </body></html>"""
 
