@@ -16,6 +16,10 @@
  h2{font-size:17px;margin:26px 0 10px} h3{font-size:15px;margin:18px 0 6px}
  h4{margin:10px 0 4px;font-size:13px;color:#555} ul{margin:4px 0 10px;padding-left:22px} li{font-size:13px;margin:3px 0;line-height:1.5}
  .box{background:#fff;border-radius:10px;padding:6px 18px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+ .filters{display:flex;flex-wrap:wrap;gap:8px 16px;padding:10px 0;border-bottom:1px solid #eee;margin-bottom:6px}
+ .filters label{font-size:13px;cursor:pointer;user-select:none;white-space:nowrap}
+ .filters input{margin-right:4px;vertical-align:middle}
+ .grp{margin:6px 0}
 </style></head><body><div class="wrap">
 <h1>上海房源变化报表</h1>
 <div class="sub">数据范围：2026-10-13 ~ 2026-10-14　｜　最新快照：2026-10-14　｜　对比上一份快照</div>
@@ -52,12 +56,40 @@
 
 <h2>最新变动明细（2026-10-14）</h2>
 <div class="box">
-<h3>随申办</h3><h4>🆕 新增（2）</h4><ul><li><b>微领地虹桥国展社区（一期）</b>（青浦区）　上海市青浦区徐泾镇沪青平公路1799弄　电话 18501608928</li><li><b>市北高新人才公寓·南苑</b>（静安区）　静安区汶水路400弄　电话 56885565</li></ul><h4>❌ 下架（1）</h4><ul><li>（模拟）已下架小区（杨浦区）</li></ul><h4>➕ 增加（1）</h4><ul><li>城投宽庭张江社区（二期）（浦东新区）：3160 → <b>3180</b></li></ul><h4>➖ 减少（1）</h4><ul><li>龙南佳苑（徐汇区）：1901 → <b>1886</b></li></ul><h4>✏️ 改名（1）</h4><ul><li>（旧名）璟煦公寓 → <b>璟煦公寓</b></li></ul>
-<h3>明珠在线</h3><h4>🆕 新增（1）</h4><ul><li><b>浦发有家进贤社区</b>（浦东新区）　满天星路899弄　电话 19916958238</li></ul><h4>❌ 下架（1）</h4><ul><li>（模拟）明珠已下架项目（浦东新区）</li></ul><h4>➕ 增加（1）</h4><ul><li>浦发有家浦贤社区（浦东新区）：2337 → <b>2342</b></li></ul><h4>✏️ 改名（1）</h4><ul><li>（旧名）浦发有家浦馨社区 → <b>浦发有家浦馨社区</b></li></ul>
+<div class="filters"><label><input type="checkbox" class="f-all" checked> 全部</label><label><input type="checkbox" class="f-d" value="徐汇区" checked> 徐汇区</label><label><input type="checkbox" class="f-d" value="杨浦区" checked> 杨浦区</label><label><input type="checkbox" class="f-d" value="浦东新区" checked> 浦东新区</label><label><input type="checkbox" class="f-d" value="青浦区" checked> 青浦区</label><label><input type="checkbox" class="f-d" value="静安区" checked> 静安区</label></div>
+<h3>随申办</h3><div class="grp"><h4>🆕 新增（2）</h4><ul><li data-d="青浦区"><b>微领地虹桥国展社区（一期）</b>（青浦区）　上海市青浦区徐泾镇沪青平公路1799弄　电话 18501608928</li><li data-d="静安区"><b>市北高新人才公寓·南苑</b>（静安区）　静安区汶水路400弄　电话 56885565</li></ul></div><div class="grp"><h4>❌ 下架（1）</h4><ul><li data-d="杨浦区">（模拟）已下架小区（杨浦区）</li></ul></div><div class="grp"><h4>➕ 增加（1）</h4><ul><li data-d="浦东新区">城投宽庭张江社区（二期）（浦东新区）：3160 → <b>3180</b></li></ul></div><div class="grp"><h4>➖ 减少（1）</h4><ul><li data-d="徐汇区">龙南佳苑（徐汇区）：1901 → <b>1886</b></li></ul></div><div class="grp"><h4>✏️ 改名（1）</h4><ul><li data-d="浦东新区">（旧名）璟煦公寓 → <b>璟煦公寓</b>（浦东新区）</li></ul></div>
+<h3>明珠在线</h3><div class="grp"><h4>🆕 新增（1）</h4><ul><li data-d="浦东新区"><b>浦发有家进贤社区</b>（浦东新区）　满天星路899弄　电话 19916958238</li></ul></div><div class="grp"><h4>❌ 下架（1）</h4><ul><li data-d="浦东新区">（模拟）明珠已下架项目（浦东新区）</li></ul></div><div class="grp"><h4>➕ 增加（1）</h4><ul><li data-d="浦东新区">浦发有家浦贤社区（浦东新区）：2337 → <b>2342</b></li></ul></div><div class="grp"><h4>✏️ 改名（1）</h4><ul><li data-d="浦东新区">（旧名）浦发有家浦馨社区 → <b>浦发有家浦馨社区</b>（浦东新区）</li></ul></div>
 </div>
 
 <h2>逐日趋势</h2>
 <table><thead><tr><th>日期</th><th>随申办项目</th><th>随申办在线</th><th>明珠项目</th><th>明珠可租</th></tr></thead>
 <tbody><tr><td>2026-10-13</td><td>857</td><td>300920</td><td>55</td><td>7613</td></tr>
 <tr><td>2026-10-14</td><td>858</td><td>307287</td><td>55</td><td>8078</td></tr></tbody></table>
-</div></body></html>
+</div>
+<script>
+function applyFilter(){
+  var checked = new Set([].slice.call(document.querySelectorAll('.f-d:checked')).map(function(x){return x.value;}));
+  document.querySelectorAll('li[data-d]').forEach(function(li){
+    li.style.display = checked.has(li.getAttribute('data-d')) ? '' : 'none';
+  });
+  document.querySelectorAll('.grp').forEach(function(g){
+    var any = [].slice.call(g.querySelectorAll('li[data-d]')).some(function(li){return li.style.display !== 'none';});
+    g.style.display = any ? '' : 'none';
+  });
+}
+document.querySelectorAll('.f-all').forEach(function(el){
+  el.addEventListener('change', function(){
+    document.querySelectorAll('.f-d').forEach(function(x){x.checked = el.checked;});
+    applyFilter();
+  });
+});
+document.querySelectorAll('.f-d').forEach(function(el){
+  el.addEventListener('change', function(){
+    var all = [].slice.call(document.querySelectorAll('.f-d'));
+    document.querySelector('.f-all').checked = all.every(function(x){return x.checked;});
+    applyFilter();
+  });
+});
+applyFilter();
+</script>
+</body></html>

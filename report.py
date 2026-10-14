@@ -108,35 +108,45 @@ def build():
     def detail(source, ch):
         new, gone, inc, dec, renamed = ch
         h = []
-        if new:
-            h.append(f'<h4>🆕 新增（{len(new)}）</h4><ul>')
-            for x in new:
-                extra = f"　{esc(x.get('addr'))}　电话 {esc(x.get('tel'))}"
-                h.append(f"<li><b>{esc(x['name'])}</b>（{esc(x['district'])}）{extra}</li>")
-            h.append("</ul>")
-        if gone:
-            h.append(f'<h4>❌ 下架（{len(gone)}）</h4><ul>')
-            for x in gone:
-                h.append(f"<li>{esc(x['name'])}（{esc(x['district'])}）</li>")
-            h.append("</ul>")
-        if inc:
-            h.append(f'<h4>➕ 增加（{len(inc)}）</h4><ul>')
-            for x, pv, cv in inc:
-                h.append(f"<li>{esc(x['name'])}（{esc(x['district'])}）：{pv} → <b>{cv}</b></li>")
-            h.append("</ul>")
-        if dec:
-            h.append(f'<h4>➖ 减少（{len(dec)}）</h4><ul>')
-            for x, pv, cv in dec:
-                h.append(f"<li>{esc(x['name'])}（{esc(x['district'])}）：{pv} → <b>{cv}</b></li>")
-            h.append("</ul>")
-        if renamed:
-            h.append(f'<h4>✏️ 改名（{len(renamed)}）</h4><ul>')
-            for x, old in renamed:
-                h.append(f"<li>{esc(old)} → <b>{esc(x['name'])}</b></li>")
-            h.append("</ul>")
-        if not h:
-            h.append("<p>无变动</p>")
-        return f"<h3>{source}</h3>" + "".join(h)
+
+        def grp(title, lis):
+            if not lis:
+                return ""
+            return f'<div class="grp"><h4>{title}</h4><ul>' + "".join(lis) + "</ul></div>"
+
+        h.append(grp(f"🆕 新增（{len(new)}）", [
+            f'<li data-d="{esc(x["district"])}"><b>{esc(x["name"])}</b>（{esc(x["district"])}）　{esc(x.get("addr"))}　电话 {esc(x.get("tel"))}</li>'
+            for x in new]))
+        h.append(grp(f"❌ 下架（{len(gone)}）", [
+            f'<li data-d="{esc(x["district"])}">{esc(x["name"])}（{esc(x["district"])}）</li>'
+            for x in gone]))
+        h.append(grp(f"➕ 增加（{len(inc)}）", [
+            f'<li data-d="{esc(x["district"])}">{esc(x["name"])}（{esc(x["district"])}）：{pv} → <b>{cv}</b></li>'
+            for x, pv, cv in inc]))
+        h.append(grp(f"➖ 减少（{len(dec)}）", [
+            f'<li data-d="{esc(x["district"])}">{esc(x["name"])}（{esc(x["district"])}）：{pv} → <b>{cv}</b></li>'
+            for x, pv, cv in dec]))
+        h.append(grp(f"✏️ 改名（{len(renamed)}）", [
+            f'<li data-d="{esc(x["district"])}">{esc(old)} → <b>{esc(x["name"])}</b>（{esc(x["district"])}）</li>'
+            for x, old in renamed]))
+        body = "".join(h) if "".join(h) else "<p>无变动</p>"
+        return f"<h3>{source}</h3>{body}"
+
+    def districts_of(ch):
+        new, gone, inc, dec, renamed = ch
+        ds = set()
+        for x in new + gone:
+            ds.add(x["district"])
+        for x, _, _ in inc + dec:
+            ds.add(x["district"])
+        for x, _ in renamed:
+            ds.add(x["district"])
+        return ds
+
+    all_districts = sorted(districts_of(ssb_ch) | districts_of(pd_ch))
+    filter_html = '<label><input type="checkbox" class="f-all" checked> 全部</label>' + "".join(
+        f'<label><input type="checkbox" class="f-d" value="{esc(d)}" checked> {esc(d)}</label>'
+        for d in all_districts)
 
     trend = []
     for s in snaps:
@@ -163,6 +173,10 @@ def build():
  h2{{font-size:17px;margin:26px 0 10px}} h3{{font-size:15px;margin:18px 0 6px}}
  h4{{margin:10px 0 4px;font-size:13px;color:#555}} ul{{margin:4px 0 10px;padding-left:22px}} li{{font-size:13px;margin:3px 0;line-height:1.5}}
  .box{{background:#fff;border-radius:10px;padding:6px 18px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
+ .filters{{display:flex;flex-wrap:wrap;gap:8px 16px;padding:10px 0;border-bottom:1px solid #eee;margin-bottom:6px}}
+ .filters label{{font-size:13px;cursor:pointer;user-select:none;white-space:nowrap}}
+ .filters input{{margin-right:4px;vertical-align:middle}}
+ .grp{{margin:6px 0}}
 </style></head><body><div class="wrap">
 <h1>上海房源变化报表</h1>
 <div class="sub">数据范围：{date_from} ~ {date_to}　｜　最新快照：{latest['date']}　｜　对比上一份快照</div>
@@ -183,6 +197,7 @@ def build():
 
 <h2>最新变动明细（{date_to}）</h2>
 <div class="box">
+<div class="filters">{filter_html}</div>
 {detail("随申办", ssb_ch)}
 {detail("明珠在线", pd_ch)}
 </div>
@@ -190,7 +205,34 @@ def build():
 <h2>逐日趋势</h2>
 <table><thead><tr><th>日期</th><th>随申办项目</th><th>随申办在线</th><th>明珠项目</th><th>明珠可租</th></tr></thead>
 <tbody>{trend_table}</tbody></table>
-</div></body></html>"""
+</div>
+<script>
+function applyFilter(){{
+  var checked = new Set([].slice.call(document.querySelectorAll('.f-d:checked')).map(function(x){{return x.value;}}));
+  document.querySelectorAll('li[data-d]').forEach(function(li){{
+    li.style.display = checked.has(li.getAttribute('data-d')) ? '' : 'none';
+  }});
+  document.querySelectorAll('.grp').forEach(function(g){{
+    var any = [].slice.call(g.querySelectorAll('li[data-d]')).some(function(li){{return li.style.display !== 'none';}});
+    g.style.display = any ? '' : 'none';
+  }});
+}}
+document.querySelectorAll('.f-all').forEach(function(el){{
+  el.addEventListener('change', function(){{
+    document.querySelectorAll('.f-d').forEach(function(x){{x.checked = el.checked;}});
+    applyFilter();
+  }});
+}});
+document.querySelectorAll('.f-d').forEach(function(el){{
+  el.addEventListener('change', function(){{
+    var all = [].slice.call(document.querySelectorAll('.f-d'));
+    document.querySelector('.f-all').checked = all.every(function(x){{return x.checked;}});
+    applyFilter();
+  }});
+}});
+applyFilter();
+</script>
+</body></html>"""
 
     with open(OUT, "w") as f:
         f.write(html)
