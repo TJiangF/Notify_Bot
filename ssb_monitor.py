@@ -3,6 +3,8 @@ import re
 import json
 import time
 import sys
+import base64
+import subprocess
 from datetime import datetime, timezone, timedelta
 import requests
 
@@ -19,6 +21,19 @@ DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "14")
 DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "浦东新区")
 PD_COOKIE = os.environ.get("PD_COOKIE", "")
 PD_CSRF = os.environ.get("PD_CSRF", "")
+PD_USER = os.environ.get("PD_USER", "")
+PD_PASS = os.environ.get("PD_PASS", "")
+PD_ENC_KEY = os.environ.get("PD_ENC_KEY", "")
+PD_LOGIN_PAGE = "https://pdrcgy.pudong.gov.cn/api/security/login.html"
+PD_CAPTCHA = "https://pdrcgy.pudong.gov.cn/captcha.jpg"
+PD_LOGIN_POST = "https://pdrcgy.pudong.gov.cn/login?z=1"
+PD_RSA_PUB = (
+    "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCdkNw/RMcJV84k3PrPWxakctTy"
+    "k3vYz4iHwpdq1PxKIIko54c+c2gyNtYaYZjwUmTf1dRvOGelhYLJSr9vx0MQCND"
+    "bGWLX1MVUoZWIPw1Le1okyq7WukaPp0y1fpDqLKc7l4UcImTc8S2YynKefXmRBV"
+    "W323rD2APrIkobq91aNwIDAQAB"
+)
+PD_REMEMBER_KEY = "__pd_remember__"
 
 KEYWORDS = [k.strip() for k in os.environ.get(
     "SSB_KEYWORDS", "森兰,中铁,桂竹,海上,西派,海华智,万安里").split(",") if k.strip()]
@@ -91,18 +106,79 @@ def fetch_all():
     return out
 
 
-def fetch_pd():
-    if not PD_COOKIE:
-        return None
-    page_headers = {
-        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "user-agent": UA,
-        "Cookie": PD_COOKIE,
-    }
-    pr = requests.get(PD_PAGE, headers=page_headers, timeout=25, allow_redirects=False)
-    if pr.status_code != 200:
-        raise PdAuthError(f"页面异常 {pr.status_code}")
-    m = re.search(r'name="_csrf"\s+content="([^"]+)"', pr.text)
+def _enc(s):
+    if not PD_ENC_KEY or not s:
+        return s
+    from cryptography.fernet import Fernet
+    return Fernet(PD_ENC_KEY.encode()).encrypt(s.encode()).decode()
+
+
+def _dec(s):
+    if not s:
+        return ""
+    if not PD_ENC_KEY:
+        return s
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(PD_ENC_KEY.encode()).decrypt(s.encode()).decode()
+    except Exception:
+        return ""
+
+
+_OCR = None
+
+
+def _ocr():
+    global _OCR
+    if _OCR is None:
+        try:
+            import ddddocr
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "ddddocr"])
+            import ddddocr
+        _OCR = ddddocr.DdddOcr(show_ad=False)
+    return _OCR
+
+
+def pd_login():
+    from cryptography.hazmat.primitives.serialization import load_der_public_key
+    from cryptography.hazmat.primitives.asymmetric import padding
+    pub = load_der_public_key(base64.b64decode(PD_RSA_PUB))
+    enc_pw = base64.b64encode(pub.encrypt(PD_PASS.encode(), padding.PKCS1v15())).decode()
+    ocr = _ocr()
+    try:
+        ocr.set_ranges("0123456789")
+    except Exception:
+        pass
+    s = requests.Session()
+    for _ in range(12):
+        page = s.get(PD_LOGIN_PAGE, headers={"user-agent": UA}, timeout=25, allow_redirects=False)
+        m = re.search(r'name="_csrf"\s+content="([^"]+)"', page.text or "")
+        csrf = m.group(1) if m else ""
+        img = s.get(PD_CAPTCHA, headers={"user-agent": UA}, timeout=25).content
+        code = ocr.classification(img)
+        if len(code) != 5 or not code.isdigit():
+            print(f"  PD验证码识别为 {code!r}，跳过重取")
+            continue
+        data = {"username": PD_USER, "password": enc_pw, "captcha": code, "yzm": "",
+                "source": "", "remember-me": "true", "_csrf": csrf}
+        H = {"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest",
+             "Referer": PD_LOGIN_PAGE, "Origin": "https://pdrcgy.pudong.gov.cn", "user-agent": UA}
+        r = s.post(PD_LOGIN_POST, data=data, headers=H, allow_redirects=False, timeout=25)
+        loc = r.headers.get("location", "")
+        print(f"  PD登录尝试 验证码={code!r} -> {r.status_code} {loc}")
+        if r.status_code in (301, 302, 303) and "login.html" not in loc:
+            print("  PD登录成功")
+            return dict(s.cookies)
+    raise PdAuthError("自动登录失败（验证码多次未识别）")
+
+
+def _pd_request(session):
+    page = session.get(PD_PAGE, headers={"accept": "text/html", "user-agent": UA},
+                       timeout=25, allow_redirects=False)
+    if page.status_code != 200:
+        raise PdAuthError(f"页面异常 {page.status_code}")
+    m = re.search(r'name="_csrf"\s+content="([^"]+)"', page.text or "")
     csrf = m.group(1) if m else PD_CSRF
     if not csrf:
         raise PdAuthError("未取到 CSRF")
@@ -120,9 +196,8 @@ def fetch_pd():
         "user-agent": UA,
         "x-csrf-token": csrf,
         "x-requested-with": "XMLHttpRequest",
-        "Cookie": PD_COOKIE,
     }
-    r = requests.post(PD_API, headers=headers, json=body, timeout=25, allow_redirects=False)
+    r = session.post(PD_API, headers=headers, json=body, timeout=25, allow_redirects=False)
     if r.status_code in (301, 302, 303, 307, 308):
         raise PdAuthError("重定向到登录页")
     if r.status_code == 403:
@@ -139,6 +214,34 @@ def fetch_pd():
         for it in (j.get(k) or []):
             seen[str(it["projectId"])] = it
     return list(seen.values())
+
+
+def fetch_pd(state):
+    if not (PD_USER or PD_COOKIE):
+        return None
+    s = requests.Session()
+    rm = _dec(state.get(PD_REMEMBER_KEY, ""))
+    if rm:
+        s.cookies.set("remember-me", rm)
+    if PD_COOKIE and not rm:
+        for part in PD_COOKIE.split(";"):
+            if "=" in part:
+                k, v = part.strip().split("=", 1)
+                s.cookies.set(k, v)
+    try:
+        return _pd_request(s)
+    except PdAuthError as e:
+        print("PD 会话失效：", e)
+        if not (PD_USER and PD_PASS):
+            raise
+        ck = pd_login()
+        rm2 = ck.get("remember-me")
+        if rm2:
+            state[PD_REMEMBER_KEY] = _enc(rm2)
+        s2 = requests.Session()
+        for k, v in ck.items():
+            s2.cookies.set(k, v)
+        return _pd_request(s2)
 
 
 def load_state():
@@ -384,9 +487,9 @@ def run_once():
         except Exception as e:
             a = f"失败({type(e).__name__})"
         b = "-"
-        if PD_COOKIE:
+        if PD_USER or PD_COOKIE:
             try:
-                b = len(fetch_pd())
+                b = len(fetch_pd(state))
             except Exception as e:
                 b = f"失败({type(e).__name__})"
         print(f"夜间静默：已保活（随申办 {a} / 人才公寓 {b}），本次不推送")
@@ -406,14 +509,14 @@ def run_once():
         notify_err(state, ERR_SB, f"⚠️ 随申办获取数据失败：{type(e).__name__}: {e}")
 
     pd = None
-    pd_configured = bool(PD_COOKIE)
+    pd_configured = bool(PD_USER or PD_COOKIE)
     if pd_configured:
         try:
-            pd = fetch_pd()
+            pd = fetch_pd(state)
         except PdAuthError as e:
-            print("人才公寓会话失效：", e)
+            print("人才公寓会话失效且自动登录失败：", e)
             notify_err(state, ERR_PD,
-                       "⚠️ 浦东人才公寓登录信息已失效，请重新登录该网站并更新 Secret「PD_COOKIE」「PD_CSRF」。")
+                       "⚠️ 浦东人才公寓自动登录失败（会话过期且验证码未识别），请检查账号密码 Secret「PD_USER」「PD_PASS」。")
         except Exception as e:
             print("人才公寓抓取失败：", repr(e))
             notify_err(state, ERR_PD, f"⚠️ 浦东人才公寓获取数据失败：{type(e).__name__}: {e}")
