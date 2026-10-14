@@ -291,8 +291,9 @@ Notify_Bot/
 | `WECOM_WEBHOOK` | 企业微信机器人 Webhook |
 | `SERVERCHAN_SENDKEY` | （可选）Server酱 SendKey，用于推送到普通微信 |
 | `SSB_COOKIE` | 随申办 Cookie：`SESSION=...; shspace_auth_token=...` |
-| `PD_COOKIE` | 浦东人才公寓 Cookie：`JSESSIONID=...; SERVERID=...` |
-| `PD_CSRF` | 浦东人才公寓 CSRF：请求头 `x-csrf-token` 的值 |
+| `PD_USER` | 明珠在线账号（手机号） |
+| `PD_PASS` | 明珠在线密码 |
+| `PD_ENC_KEY` | 加密存储会话的密钥（`python3 -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`） |
 
 ### 3. 手动触发测试
 
@@ -431,11 +432,20 @@ python3 ssb_monitor.py
    - `-b` 后面的是 `PD_COOKIE`
    - `-H 'x-csrf-token: ...'` 的是 `PD_CSRF`
 
-### 注意
+### 登录与会话（自动维护）
 
-- **验证码只在登录时**。脚本不自动登录（不做验证码识别、不保存你的账号密码），只复用你登录后的会话并每 5 分钟保活。
-- 会话疑似空闲即失效，靠轮询保活；失效时脚本会推送提醒，重新登录更新 `PD_COOKIE`/`PD_CSRF` 即可。
-- 该站已有关键字命中（如 `森兰星遇S万安里店`），首次运行会作为基线，只报之后的新增与变化。
+该站登录会话（`JSESSIONID`）约 **40–60 分钟**就失效，无法靠保活维持。脚本采用**自动登录 + remember-me 长期会话**方案，无需你再手动更新 Cookie：
+
+1. 会话失效时，脚本自动登录：
+   - 取登录页获取 CSRF
+   - 取 `/captcha.jpg`，用 **ddddocr** 识别 5 位数字验证码（识别不到 5 位就换图重试）
+   - 用页面里的 RSA 公钥加密密码，POST 到 `/login?z=1`（带 `remember-me=true`）
+2. 登录成功后会拿到 **`remember-me` cookie**（Spring 记住我，有效期约 2 周）。脚本把它**加密后**存进 `ssb_state.json`（密钥在 Secret `PD_ENC_KEY`），之后每轮直接用它访问——即使 `JSESSIONID` 过期，服务器也会用 remember-me 自动重建会话。
+3. remember-me 到期后再自动登录一次，如此循环。
+
+> - 账号密码只放 Secret `PD_USER`/`PD_PASS`，会话用 `PD_ENC_KEY` 加密后才落仓库，不会明文暴露。
+> - 自动登录用第三方 OCR（ddddocr）识别验证码，属于自动化登录，请自行斟酌使用。
+> - 该站首次运行会建立基线，只报之后的新增/减少/改名。
 
 ---
 
