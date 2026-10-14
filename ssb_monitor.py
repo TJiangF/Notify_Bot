@@ -8,6 +8,7 @@ import requests
 
 API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getProjectList"
 PD_API = "https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx/getProjectAndHouse.html"
+PD_PAGE = "https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx.html?index=0"
 
 WEBHOOK = os.environ.get("WECOM_WEBHOOK", "")
 SERVERCHAN_KEY = os.environ.get("SERVERCHAN_SENDKEY", "")
@@ -93,6 +94,18 @@ def fetch_all():
 def fetch_pd():
     if not PD_COOKIE:
         return None
+    page_headers = {
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "user-agent": UA,
+        "Cookie": PD_COOKIE,
+    }
+    pr = requests.get(PD_PAGE, headers=page_headers, timeout=25, allow_redirects=False)
+    if pr.status_code != 200:
+        raise PdAuthError(f"页面异常 {pr.status_code}")
+    m = re.search(r'name="_csrf"\s+content="([^"]+)"', pr.text)
+    csrf = m.group(1) if m else PD_CSRF
+    if not csrf:
+        raise PdAuthError("未取到 CSRF")
     body = {
         "checkdDicData": {"xm_pq": [], "xm_qy": [], "xm_dtx": "", "xm_dtz": [],
                           "xm_kfs": [], "xm_kzts": [], "xm_zt": [], "xm_fylx": []},
@@ -105,7 +118,7 @@ def fetch_pd():
         "origin": "https://pdrcgy.pudong.gov.cn",
         "referer": "https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx.html?index=0",
         "user-agent": UA,
-        "x-csrf-token": PD_CSRF,
+        "x-csrf-token": csrf,
         "x-requested-with": "XMLHttpRequest",
         "Cookie": PD_COOKIE,
     }
