@@ -2,7 +2,7 @@
   "__last_summary__": 1791816995.4367354,
   "__scope__": "district:14",
   "__last_heartbeat__": 1791860658.9770951,
-  "__last_heartbeat_hour__": "2026-10-14 17",
+  "__last_heartbeat_hour__": "2026-10-14 18",
   "__pd_projects__": {
     "213": {
       "name": "浦发有家进贤社区",
@@ -501,15 +501,15 @@
     "total": 3021,
     "name": "慧智·有巢公寓社区"
   },
-  "903": {
-    "online": 723,
-    "total": 723,
-    "name": "璟博公寓"
-  },
   "4416": {
     "online": 1764,
     "total": 2520,
     "name": "合庆璟泊社区"
+  },
+  "903": {
+    "online": 723,
+    "total": 723,
+    "name": "璟博公寓"
   },
   "725": {
     "online": 1257,
