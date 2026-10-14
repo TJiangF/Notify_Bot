@@ -40,6 +40,7 @@ KEYWORDS = [k.strip() for k in os.environ.get(
 
 STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
 
 IGNORE = {
@@ -585,6 +586,22 @@ def run_once():
 
     state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
     save_state(state)
+
+    maybe_daily_snapshot(bj)
+
+
+def maybe_daily_snapshot(bj):
+    if bj.hour < 12:
+        return
+    snap = os.path.join(BASE_DIR, "data", bj.strftime("%Y-%m-%d") + ".json")
+    if os.path.exists(snap):
+        return
+    try:
+        subprocess.run([sys.executable, os.path.join(BASE_DIR, "snapshot.py")], check=False)
+        subprocess.run([sys.executable, os.path.join(BASE_DIR, "report.py")], check=False)
+        print("已完成每日存档与报表")
+    except Exception as e:
+        print("每日存档失败：", repr(e))
 
 
 def run_loop():

@@ -1,0 +1,83 @@
+import os
+import json
+import requests
+
+import ssb_monitor as base
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+
+def fetch_ssb_all():
+    headers = dict(base.HEADERS)
+    headers["Cookie"] = base.COOKIE
+    param = {
+        "districtId": "", "doorType": "", "rentHigh": "", "rentLow": "",
+        "searchWord": "", "street": [], "supplyWay": "",
+        "ringRdId": "", "orderBy": "", "isAsc": True,
+    }
+    out = []
+    page = 1
+    while True:
+        data = {"params": json.dumps(
+            {"pageNo": page, "pageSize": 500, "param": param},
+            ensure_ascii=False,
+        )}
+        r = requests.post(base.API, headers=headers, data=data, timeout=25)
+        r.raise_for_status()
+        j = r.json()
+        if "data" not in j:
+            raise base.AuthError("随申办 Cookie 无效")
+        inner = j["data"]
+        if isinstance(inner, str):
+            inner = json.loads(inner)
+        d = inner["data"]
+        out.extend(d.get("results", []))
+        if page * d.get("pageSize", 500) >= d.get("totalCount", 0):
+            break
+        page += 1
+    return out
+
+
+def build_snapshot(ssb, pd):
+    return {
+        "date": base.now_bj().strftime("%Y-%m-%d"),
+        "generated_at": base.now_bj().isoformat(timespec="seconds"),
+        "ssb": [{
+            "id": r.get("projectId"),
+            "name": r.get("projectName"),
+            "district": r.get("districtName") or "未知",
+            "online": r.get("onlineFlatNum") or 0,
+            "total": r.get("totalFlatNum") or 0,
+            "rent_low": r.get("rentLow"),
+            "rent_high": r.get("rentHigh"),
+            "addr": r.get("projectLocation"),
+            "tel": r.get("projectTel"),
+        } for r in ssb],
+        "pd": [{
+            "id": r.get("projectId"),
+            "name": r.get("villageProjectName"),
+            "district": "浦东新区",
+            "kzts": r.get("kzts") or 0,
+            "status": r.get("projectStatusName"),
+            "addr": r.get("LOCATION"),
+            "tel": r.get("lxdh"),
+        } for r in (pd or [])],
+    }
+
+
+def collect_and_save():
+    ssb = fetch_ssb_all()
+    state = base.load_state()
+    pd = base.fetch_pd(state)
+    base.save_state(state)
+    snap = build_snapshot(ssb, pd)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    path = os.path.join(DATA_DIR, snap["date"] + ".json")
+    with open(path, "w") as f:
+        json.dump(snap, f, ensure_ascii=False, indent=1)
+    print(f"已保存 {path}：随申办 {len(snap['ssb'])} 条 / 明珠在线 {len(snap['pd'])} 条")
+    return path
+
+
+if __name__ == "__main__":
+    collect_and_save()
