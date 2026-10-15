@@ -2,7 +2,7 @@
   "__last_summary__": 1791816995.4367354,
   "__scope__": "district:14",
   "__last_heartbeat__": 1791860658.9770951,
-  "__last_heartbeat_hour__": "2026-10-15 13",
+  "__last_heartbeat_hour__": "2026-10-15 14",
   "__pd_projects__": {
     "213": {
       "name": "浦发有家进贤社区",
@@ -458,15 +458,15 @@
     "total": 120,
     "name": "锦华苑（锦绣里昌邑）"
   },
-  "5204": {
-    "online": 204,
-    "total": 204,
-    "name": "筑寓 金桥居"
-  },
   "5105": {
     "online": 134,
     "total": 134,
     "name": "鑫居●花木苗桐佳苑"
+  },
+  "5204": {
+    "online": 204,
+    "total": 204,
+    "name": "筑寓 金桥居"
   },
   "2985": {
     "online": 943,
