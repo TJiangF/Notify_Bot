@@ -428,7 +428,6 @@
       "contact": "15021196751"
     }
   },
-  "__err_pd__": "⚠️ 浦东人才公寓获取数据失败：ConnectionError: HTTPSConnectionPool(host='pdrcgy.pudong.gov.cn', port=443): Max retries exceeded with url: /api/rcaj/fwcx.html?index=0 (Caused by NameResolutionError(\"HTTPSConnection(host='pdrcgy.pudong.gov.cn', port=443): Failed to resolve 'pdrcgy.pudong.gov.cn' ([Errno -3] Temporary failure in name resolution)\"))",
   "4739": {
     "online": 3180,
     "total": 3180,
