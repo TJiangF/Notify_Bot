@@ -682,7 +682,14 @@ def maybe_daily_snapshot(bj):
         return
     snap = os.path.join(BASE_DIR, "data", bj.strftime("%Y-%m-%d") + ".json")
     if os.path.exists(snap):
-        return
+        try:
+            with open(snap) as f:
+                gen = json.load(f).get("generated_at", "")
+            gen_hour = int(gen[11:13]) if len(gen) >= 13 else 0
+        except Exception:
+            gen_hour = 0
+        if gen_hour >= 12:
+            return
     try:
         subprocess.run([sys.executable, os.path.join(BASE_DIR, "snapshot.py")], check=False)
         subprocess.run([sys.executable, os.path.join(BASE_DIR, "report.py")], check=False)
