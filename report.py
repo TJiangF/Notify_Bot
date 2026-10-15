@@ -84,6 +84,26 @@ def build():
     tot_ssb_online = sum(x["online"] for x in latest["ssb"])
     tot_pd = len(latest["pd"])
     tot_pd_kzts = sum(x["kzts"] for x in latest["pd"])
+
+    has_prev = len(snaps) >= 2
+    p_ssb = len(prev.get("ssb", [])) if has_prev else None
+    p_ssb_online = sum(x["online"] for x in prev.get("ssb", [])) if has_prev else None
+    p_pd = len(prev.get("pd", [])) if has_prev else None
+    p_pd_kzts = sum(x["kzts"] for x in prev.get("pd", [])) if has_prev else None
+    p_notice = len(prev.get("notice", [])) if (has_prev and "notice" in prev) else None
+
+    def fmt(cur, prv):
+        if prv is None:
+            return f"{cur}"
+        d = cur - prv
+        if d == 0:
+            return f"{cur}"
+        return f"{cur}<span class='d'>（{prv}{'+' if d > 0 else ''}{d}）</span>"
+
+    c_ssb = fmt(tot_ssb, p_ssb)
+    c_ssb_online = fmt(tot_ssb_online, p_ssb_online)
+    c_pd = fmt(tot_pd, p_pd)
+    c_pd_kzts = fmt(tot_pd_kzts, p_pd_kzts)
     date_from = snaps[0]["date"]
     date_to = latest["date"]
 
@@ -97,6 +117,7 @@ def build():
             f'<td>{esc(n.get("rent"))}</td><td>{esc(n.get("addr"))}</td>'
             f'<td>{esc(n.get("tel"))}</td><td>{esc(n.get("org"))}</td></tr>')
     notice_table = "\n".join(nrows) or '<tr><td colspan="6">暂无预告</td></tr>'
+    c_notice = fmt(len(notice), p_notice)
 
     rows = []
     for d in sorted(ssb_dist, key=lambda k: -ssb_dist[k]["online"]):
@@ -190,7 +211,7 @@ def build():
  h1{{font-size:22px;margin:0 0 4px}} .sub{{color:#888;font-size:13px;margin-bottom:18px}}
  .cards{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}}
  .card{{background:#fff;border-radius:10px;padding:14px 18px;flex:1;min-width:150px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
- .card .n{{font-size:24px;font-weight:700}} .card .l{{color:#888;font-size:12px;margin-top:2px}}
+ .card .n{{font-size:24px;font-weight:700}} .card .d{{font-size:13px;color:#888;font-weight:400;margin-left:2px}} .card .l{{color:#888;font-size:12px;margin-top:2px}}
  table{{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:22px}}
  th,td{{padding:9px 12px;text-align:left;border-bottom:1px solid #eee;font-size:14px}}
  th{{background:#fafafa;color:#666;font-weight:600}}
@@ -209,11 +230,11 @@ def build():
 <h1>上海房源变化报表</h1>
 <div class="sub">数据范围：{date_from} ~ {date_to}　｜　最新快照：{latest['date']}　｜　对比上一份快照</div>
 <div class="cards">
- <div class="card"><div class="n">{tot_ssb}</div><div class="l">随申办 项目数</div></div>
- <div class="card"><div class="n">{tot_ssb_online}</div><div class="l">随申办 在线房源数</div></div>
- <div class="card"><div class="n">{tot_pd}</div><div class="l">明珠在线 项目数</div></div>
- <div class="card"><div class="n">{tot_pd_kzts}</div><div class="l">明珠在线 可租套数</div></div>
- <div class="card"><div class="n">{len(notice)}</div><div class="l">随申办 供应预告</div></div>
+ <div class="card"><div class="n">{c_ssb}</div><div class="l">随申办 项目数</div></div>
+ <div class="card"><div class="n">{c_ssb_online}</div><div class="l">随申办 在线房源数</div></div>
+ <div class="card"><div class="n">{c_pd}</div><div class="l">明珠在线 项目数</div></div>
+ <div class="card"><div class="n">{c_pd_kzts}</div><div class="l">明珠在线 可租套数</div></div>
+ <div class="card"><div class="n">{c_notice}</div><div class="l">随申办 供应预告</div></div>
 </div>
 
 <h2>随申办 · 供应预告（{len(notice)}）</h2>
