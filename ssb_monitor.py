@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 import requests
 
 API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getProjectList"
+NOTICE_API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getNotice"
 PD_API = "https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx/getProjectAndHouse.html"
 PD_PAGE = "https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx.html?index=0"
 
@@ -50,6 +51,7 @@ IGNORE = {
 
 ERR_SB = "__err_sb__"
 ERR_PD = "__err_pd__"
+NOTICE_KEY = "__notices__"
 HEARTBEAT_KEY = "__last_heartbeat_hour__"
 SCOPE_KEY = "__scope__"
 PD_PROJECTS_KEY = "__pd_projects__"
@@ -105,6 +107,25 @@ def fetch_all():
             break
         page += 1
     return out
+
+
+def fetch_notice():
+    body = json.dumps({"pageNo": 1, "pageSize": 100, "param": {"noticeId": ""}}, ensure_ascii=False)
+    headers = {
+        "Origin": "https://zwdt.sh.gov.cn",
+        "Referer": "https://zwdt.sh.gov.cn/smzy/sh_zf_onething_mobile/rent-house/assurance-find",
+        "User-Agent": UA,
+        "Cookie": COOKIE,
+    }
+    r = requests.post(NOTICE_API, headers=headers, files={"params": (None, body)}, timeout=25)
+    r.raise_for_status()
+    j = r.json()
+    if "data" not in j:
+        raise AuthError(j.get("url", str(j)))
+    inner = j["data"]
+    if isinstance(inner, str):
+        inner = json.loads(inner)
+    return inner["data"].get("results", [])
 
 
 def _enc(s):
@@ -468,6 +489,47 @@ def pd_heartbeat_lines(pd):
     return [f"房源项目数：{len(pd)} 个"]
 
 
+def notice_diff(state, cur):
+    old = state.get(NOTICE_KEY, {})
+    cur_map = {str(n["noticeId"]): n for n in cur}
+    new = [n for pid, n in cur_map.items() if pid not in old]
+    removed = [old[pid] for pid in old if pid not in cur_map]
+    return new, removed
+
+
+def notice_update(state, cur):
+    state[NOTICE_KEY] = {str(n["noticeId"]): {
+        "name": n.get("projectName"),
+        "supplyDate": n.get("planSupplyDate"),
+        "address": n.get("projectAddress"),
+        "rent": n.get("planRentLevel"),
+        "contact": n.get("contact"),
+    } for n in cur}
+
+
+def notice_change_lines(new, removed):
+    lines = []
+    if new:
+        lines.append(f"📢 新增供应预告（{len(new)}）")
+        for n in new:
+            lines.append(f"・ {n.get('projectName')}")
+            lines.append(f"   地址：{n.get('projectAddress')}")
+            lines.append(f"   计划供应日：{n.get('planSupplyDate')}｜租金：{n.get('planRentLevel')}")
+            lines.append(f"   电话：{n.get('contact')}")
+    if removed:
+        lines.append(f"➖ 预告移除（{len(removed)}）")
+        for prev in removed:
+            lines.append(f"・ {prev.get('name')}")
+    return lines
+
+
+def notice_heartbeat_lines(cur):
+    lines = [f"供应预告：{len(cur)} 条"]
+    for n in sorted(cur, key=lambda x: str(x.get("planSupplyDate") or "")):
+        lines.append(f"・ {n.get('projectName')}｜{n.get('planSupplyDate')}｜{n.get('projectAddress')}")
+    return lines
+
+
 def notify_err(state, key, text):
     if state.get(key) != text:
         push(text)
@@ -487,13 +549,18 @@ def run_once():
             a = len(fetch_all())
         except Exception as e:
             a = f"失败({type(e).__name__})"
+        c = "-"
+        try:
+            c = len(fetch_notice())
+        except Exception as e:
+            c = f"失败({type(e).__name__})"
         b = "-"
         if PD_USER or PD_COOKIE:
             try:
                 b = len(fetch_pd(state))
             except Exception as e:
                 b = f"失败({type(e).__name__})"
-        print(f"夜间静默：已保活（随申办 {a} / 人才公寓 {b}），本次不推送")
+        print(f"夜间静默：已保活（随申办 {a} / 预告 {c} / 人才公寓 {b}），本次不推送")
         return
 
     recovered = False
@@ -522,6 +589,13 @@ def run_once():
             print("人才公寓抓取失败：", repr(e))
             notify_err(state, ERR_PD, f"⚠️ 浦东人才公寓获取数据失败：{type(e).__name__}: {e}")
 
+    notice = None
+    if cur is not None:
+        try:
+            notice = fetch_notice()
+        except Exception as e:
+            print("预告抓取失败：", repr(e))
+
     if cur is not None and clear_err(state, ERR_SB):
         recovered = True
     if pd_configured and pd is not None and clear_err(state, ERR_PD):
@@ -531,12 +605,15 @@ def run_once():
 
     sb_baseline = not project_items(state)
     pd_baseline = not state.get(PD_PROJECTS_KEY)
+    notice_baseline = not state.get(NOTICE_KEY)
 
     if FORCE_HEARTBEAT:
         lines = []
         if cur:
             lines += ["【房源监控 · 测试心跳】", f"时间：{now_bj().strftime('%Y-%m-%d %H:%M')}"]
             lines += [section(f"随申办（{DISTRICT_NAME}）", sb_heartbeat_lines(cur))]
+            if notice:
+                lines += [section("随申办·供应预告", notice_heartbeat_lines(notice))]
             if pd:
                 lines += [section("明珠在线", pd_heartbeat_lines(pd))]
         else:
@@ -544,6 +621,8 @@ def run_once():
         push("\n".join(lines))
         if cur:
             update_state(state, cur)
+        if notice is not None:
+            notice_update(state, notice)
         if pd is not None:
             pd_update(state, pd)
         state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
@@ -557,6 +636,12 @@ def run_once():
             sb_lines = sb_change_lines(*diff(state, cur))
             change_sections += section(f"随申办（{DISTRICT_NAME}）", sb_lines)
         update_state(state, cur)
+
+    if notice is not None:
+        if not notice_baseline:
+            new_n, removed_n = notice_diff(state, notice)
+            change_sections += section("随申办·供应预告", notice_change_lines(new_n, removed_n))
+        notice_update(state, notice)
 
     if pd is not None:
         if not pd_baseline:
@@ -577,9 +662,11 @@ def run_once():
         lines = ["【房源监控 · 定时心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}"]
         if cur:
             lines += [section(f"随申办（{DISTRICT_NAME}）", sb_heartbeat_lines(cur))]
+        if notice:
+            lines += [section("随申办·供应预告", notice_heartbeat_lines(notice))]
         if pd:
             lines += [section("明珠在线", pd_heartbeat_lines(pd))]
-        if cur or pd:
+        if cur or pd or notice:
             push("\n".join(lines), heartbeat=True)
             state[HEARTBEAT_KEY] = stamp
             print("整点心跳已推送:", stamp)

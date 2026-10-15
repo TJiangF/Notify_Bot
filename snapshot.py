@@ -38,7 +38,7 @@ def fetch_ssb_all():
     return out
 
 
-def build_snapshot(ssb, pd):
+def build_snapshot(ssb, pd, notice):
     return {
         "date": base.now_bj().strftime("%Y-%m-%d"),
         "generated_at": base.now_bj().isoformat(timespec="seconds"),
@@ -62,6 +62,16 @@ def build_snapshot(ssb, pd):
             "addr": r.get("LOCATION"),
             "tel": r.get("lxdh"),
         } for r in (pd or [])],
+        "notice": [{
+            "id": r.get("noticeId"),
+            "name": r.get("projectName"),
+            "addr": r.get("projectAddress"),
+            "rent": r.get("planRentLevel"),
+            "supply_date": r.get("planSupplyDate"),
+            "tel": r.get("contact"),
+            "org": r.get("orgName"),
+            "intro": r.get("introduction"),
+        } for r in (notice or [])],
     }
 
 
@@ -70,12 +80,17 @@ def collect_and_save():
     state = base.load_state()
     pd = base.fetch_pd(state)
     base.save_state(state)
-    snap = build_snapshot(ssb, pd)
+    try:
+        notice = base.fetch_notice()
+    except Exception as e:
+        print("预告抓取失败：", repr(e))
+        notice = []
+    snap = build_snapshot(ssb, pd, notice)
     os.makedirs(DATA_DIR, exist_ok=True)
     path = os.path.join(DATA_DIR, snap["date"] + ".json")
     with open(path, "w") as f:
         json.dump(snap, f, ensure_ascii=False, indent=1)
-    print(f"已保存 {path}：随申办 {len(snap['ssb'])} 条 / 明珠在线 {len(snap['pd'])} 条")
+    print(f"已保存 {path}：随申办 {len(snap['ssb'])} 条 / 明珠在线 {len(snap['pd'])} 条 / 预告 {len(snap['notice'])} 条")
     return path
 
 

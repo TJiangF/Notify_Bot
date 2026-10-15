@@ -19,6 +19,7 @@
 | 定时轮询 | 每 **5 分钟**查询两个数据源 |
 | 随申办·变动告警 | 项目**新增 / 房源增加 / 房源减少 / 改名 / 下架**时**立即**推送（不受整点限制） |
 | 随申办·关键字 | 命中关键字的房源用 ⭐ 标注；命中关键字的**新增**置顶 🔔 单独标出 |
+| 随申办·供应预告 | 抓取 `getNotice` 预告；**有新增预告立即推送**（名称/地址/计划供应日/租金/电话），并列入心跳与每日报表 |
 | 明珠在线·变动告警 | 房源列表**新增 / 减少 / 改名**时**立即**推送，含**名称、地址、电话、状态、可租套数** |
 | 心跳通知 | **08:00–20:00 每小时整点后一次；22:00 再一次**（内容：各自项目数、随申办在线总数与关键字房源） |
 | 夜间静默 | **北京时间 00:00–08:00 不推送**；但仍每 5 分钟静默请求一次（保活） |
@@ -79,6 +80,13 @@ ssb_monitor.py  ← 一次运行查两个源
 - **区 ID**：浦东=`14`（其余见返回的 `districtId`）
 
 关键字段：`projectId`、`projectName`、`onlineFlatNum`（在线/可租房源数）、`totalFlatNum`、`rentLow/rentHigh`、`projectTel`、`districtName`。
+
+### 供应预告接口
+
+- **URL**：`POST https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getNotice`（**multipart/form-data**，字段 `params`）
+- **参数**：`params={"pageNo":1,"pageSize":100,"param":{"noticeId":""}}`
+- **响应**：同样两层结构；字段有 `noticeId`、`projectName`、`projectAddress`、`planRentLevel`（计划租金）、`planSupplyDate`（计划供应日）、`contact`（电话）、`orgName`（运营单位）、`introduction`（介绍）
+- 用于：心跳里的“供应预告”板块、**新增预告即时推送**、以及每日报表的预告表
 
 ---
 
@@ -273,7 +281,18 @@ python3 ssb_monitor.py                     # 常驻循环（本地服务器/NAS�
 
 ---
 
-## 十一、常见问题
+## 十一、每日存档与 HTML 报表
+
+每天 12:00 后的首次运行会自动：
+
+- `snapshot.py`：抓取**全部行政区**的随申办 + 明珠在线 + **供应预告**，存为 `data/YYYY-MM-DD.json`
+- `report.py`：生成 `report.html`
+
+报表内容：随申办「供应预告」表、各区统计、变动明细、全部房源（可按区筛选）、逐日趋势。
+
+---
+
+## 十二、常见问题
 
 **Q：Actions 报 SSL / 超时？** GitHub 在国外 IP，个别时候访问 gov 慢或被限；持续失败就改用国内服务器或家里常开设备跑。
 

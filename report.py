@@ -87,6 +87,17 @@ def build():
     date_from = snaps[0]["date"]
     date_to = latest["date"]
 
+    notice = latest.get("notice", [])
+    prev_notice_ids = {str(x.get("id")) for x in prev.get("notice", [])}
+    nrows = []
+    for n in sorted(notice, key=lambda a: str(a.get("supply_date") or "")):
+        tag = "🆕 " if str(n.get("id")) not in prev_notice_ids else ""
+        nrows.append(
+            f'<tr><td>{tag}{esc(n.get("name"))}</td><td>{esc(n.get("supply_date"))}</td>'
+            f'<td>{esc(n.get("rent"))}</td><td>{esc(n.get("addr"))}</td>'
+            f'<td>{esc(n.get("tel"))}</td><td>{esc(n.get("org"))}</td></tr>')
+    notice_table = "\n".join(nrows) or '<tr><td colspan="6">暂无预告</td></tr>'
+
     rows = []
     for d in sorted(ssb_dist, key=lambda k: -ssb_dist[k]["online"]):
         s = ssb_dist[d]
@@ -202,7 +213,12 @@ def build():
  <div class="card"><div class="n">{tot_ssb_online}</div><div class="l">随申办 在线房源数</div></div>
  <div class="card"><div class="n">{tot_pd}</div><div class="l">明珠在线 项目数</div></div>
  <div class="card"><div class="n">{tot_pd_kzts}</div><div class="l">明珠在线 可租套数</div></div>
+ <div class="card"><div class="n">{len(notice)}</div><div class="l">随申办 供应预告</div></div>
 </div>
+
+<h2>随申办 · 供应预告（{len(notice)}）</h2>
+<table><thead><tr><th>项目</th><th>计划供应日</th><th>租金</th><th>地址</th><th>电话</th><th>运营单位</th></tr></thead>
+<tbody>{notice_table}</tbody></table>
 
 <h2>随申办 · 按行政区</h2>
 <table><thead><tr><th>行政区</th><th>项目数</th><th>在线房源</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
