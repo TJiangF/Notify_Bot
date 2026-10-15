@@ -2,7 +2,7 @@
   "__last_summary__": 1791816995.4367354,
   "__scope__": "district:14",
   "__last_heartbeat__": 1791860658.9770951,
-  "__last_heartbeat_hour__": "2026-10-15 19",
+  "__last_heartbeat_hour__": "2026-10-15 20",
   "__pd_projects__": {
     "213": {
       "name": "浦发有家进贤社区",
@@ -747,5 +747,6 @@
     "online": 1451,
     "total": 1451,
     "name": "浦发有家·康涵社区"
-  }
+  },
+  "__err_sb__": "⚠️ 随申办获取数据失败：ReadTimeout: HTTPSConnectionPool(host='zwdt.sh.gov.cn', port=443): Read timed out. (read timeout=25)"
 }
