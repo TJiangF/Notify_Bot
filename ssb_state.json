@@ -747,6 +747,5 @@
     "online": 1451,
     "total": 1451,
     "name": "浦发有家·康涵社区"
-  },
-  "__err_sb__": "⚠️ 随申办获取数据失败：ConnectionError: HTTPSConnectionPool(host='zwdt.sh.gov.cn', port=443): Max retries exceeded with url: /smzy/shspacelife/bzf/getProjectList (Caused by NewConnectionError(\"HTTPSConnection(host='zwdt.sh.gov.cn', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable\"))"
+  }
 }
