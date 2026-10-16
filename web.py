@@ -16,6 +16,37 @@ ADMIN_PW = os.environ.get("SSB_ADMIN_PASSWORD", "change-me")
 SECRET = os.environ.get("SSB_WEB_SECRET", "please-change-this")
 AUTO_REFRESH = int(os.environ.get("SSB_REFRESH_SEC", "1800"))
 BJ = timezone(timedelta(hours=8))
+DATA_DIR = os.path.join(BASE, "data")
+VISITS_FILE = os.path.join(DATA_DIR, "visits.json")
+
+
+def bump_visit():
+    today = datetime.now(BJ).date().isoformat()
+    d = {}
+    if os.path.exists(VISITS_FILE):
+        try:
+            d = json.load(open(VISITS_FILE))
+        except Exception:
+            d = {}
+    d["total"] = int(d.get("total", 0)) + 1
+    days = d.setdefault("days", {})
+    days[today] = int(days.get(today, 0)) + 1
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        json.dump(d, open(VISITS_FILE, "w"))
+    except Exception:
+        pass
+
+
+def visit_stats():
+    d = {}
+    if os.path.exists(VISITS_FILE):
+        try:
+            d = json.load(open(VISITS_FILE))
+        except Exception:
+            d = {}
+    today = datetime.now(BJ).date().isoformat()
+    return int(d.get("total", 0)), int(d.get("days", {}).get(today, 0))
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET)
@@ -33,6 +64,7 @@ def pick_default_base(snaps, days):
 
 @app.get("/", response_class=HTMLResponse)
 def index(base: str = Query(None)):
+    bump_visit()
     cur = report.load_current()
     snaps = report.load_snapshots()
     if not snaps:
@@ -54,6 +86,7 @@ def index(base: str = Query(None)):
 
 def _admin_page(request, msg="", err=""):
     cfg = cfgmod.load()
+    vtotal, vtoday = visit_stats()
     logged = request.session.get("admin")
     if not logged:
         return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
@@ -78,7 +111,8 @@ label{{display:block;font-size:13px;color:#555;margin:12px 0 4px}}
 input,textarea{{width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px}}
 button{{padding:9px 16px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;margin-top:16px}}
 .ok{{color:#1a8f43;margin:8px 0}}</style></head><body><div class="wrap">
-<h2>监控 / 推送配置</h2>{('<div class=ok>'+msg+'</div>') if msg else ''}
+<h2>监控 / 推送配置</h2>
+<p style="color:#888;font-size:13px;margin:0 0 10px">报表访问：累计 <b>{vtotal}</b> 次 ｜ 今日 <b>{vtoday}</b> 次</p>{('<div class=ok>'+msg+'</div>') if msg else ''}
 <form method=post action="{ADMIN_PATH}/save">
 <label>企业微信 Webhook</label><input name=wecom_webhook value="{cfg.get('wecom_webhook','')}">
 <label>Server酱 SendKey</label><input name=serverchan_key value="{cfg.get('serverchan_key','')}">
