@@ -700,7 +700,10 @@ def maybe_daily_snapshot(bj):
 
 def run_loop():
     while True:
-        run_once()
+        try:
+            run_once()
+        finally:
+            print(time.strftime("%Y-%m-%d %H:%M:%S"), "本轮检查完成", flush=True)
         time.sleep(int(os.environ.get("SSB_INTERVAL", "300")))
 
 
