@@ -64,6 +64,12 @@ def build_snapshot(ssb, pd, notice):
             "status": r.get("projectStatusName"),
             "addr": r.get("LOCATION"),
             "tel": r.get("lxdh"),
+            "price": r.get("price_range"),
+            "metro": r.get("metro_subway") or [],
+            "zone": r.get("zoneName"),
+            "supply_date": r.get("supplyDate"),
+            "release_time": r.get("releaseTime"),
+            "fylx": r.get("xmfyzts") or [],
         } for r in (pd or [])],
         "notice": [{
             "id": r.get("noticeId"),

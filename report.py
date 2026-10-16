@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import glob
 from collections import defaultdict
@@ -185,12 +186,42 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             f'　在线 {x["online"]} 套　{esc(x.get("addr"))}　电话 {esc(x.get("tel"))}</li>'
             for x in sorted(ssb, key=lambda a: (a["district"], -(a["online"] or 0))))
         pd = latest["pd"]
-        pd_d = sorted({x["district"] for x in pd})
-        pd_filter = "".join(f'<label><input type="checkbox" class="ga" value="{esc(d)}"> {esc(d)}</label>' for d in pd_d)
-        pd_items = "".join(
-            f'<li data-d="{esc(x["district"])}"><b>{esc(x["name"])}</b>（{esc(x["district"])}）'
-            f'　可租 {x["kzts"]} 套　{esc(x.get("addr"))}　电话 {esc(x.get("tel"))} [{esc(x.get("status"))}]</li>'
-            for x in sorted(pd, key=lambda a: -(a["kzts"] or 0)))
+        metros = sorted({m for x in pd for m in (x.get("metro") or [])})
+        statuses = sorted({x.get("status") for x in pd if x.get("status")})
+        metro_opts = "".join(f'<option value="{esc(m)}">{esc(m)}</option>' for m in metros)
+        status_opts = "".join(f'<option value="{esc(s)}">{esc(s)}</option>' for s in statuses)
+        pd_filter = (
+            '<label>租金：<input id="pd_fmin" type="number" placeholder="最低" style="width:72px">'
+            ' - <input id="pd_fmax" type="number" placeholder="最高" style="width:72px"></label>'
+            f'<label>地铁：<select id="pd_fmetro"><option value="">全部</option>{metro_opts}</select></label>'
+            f'<label>状态：<select id="pd_fstatus"><option value="">全部</option>{status_opts}</select></label>'
+            '<button type="button" onclick="filterPd()">筛选</button>'
+        )
+        pitems = []
+        for x in sorted(pd, key=lambda a: -(a["kzts"] or 0)):
+            price = x.get("price") or ""
+            nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", price)]
+            pmin = min(nums) if nums else 0
+            pmax = max(nums) if nums else 0
+            metro = "、".join(x.get("metro") or [])
+            status = x.get("status") or ""
+            fylx = "、".join(x.get("fylx") or [])
+            cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
+            badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
+            pitems.append(
+                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro)}" data-status="{esc(status)}">'
+                f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
+                f'<span class="pdkz">可租 {x["kzts"]} 套</span></span>'
+                f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
+                f'<div class="pddetail"><div class="pdgrid">'
+                f'<div class="pdcell"><b>租金</b>{esc(price) or "—"}</div>'
+                f'<div class="pdcell"><b>地铁</b>{esc(metro) or "—"}</div>'
+                f'<div class="pdcell"><b>板块</b>{esc(x.get("zone")) or "—"}</div>'
+                f'<div class="pdcell"><b>供应</b>{esc(x.get("supply_date")) or "—"}</div>'
+                f'<div class="pdcell"><b>发布</b>{esc(x.get("release_time")) or "—"}</div>'
+                f'<div class="pdcell"><b>户型</b>{esc(fylx) or "—"}</div>'
+                f'</div></div></li>')
+        pd_items = "".join(pitems)
         return ssb_filter, ssb_items, pd_filter, pd_items
 
     ssb_filter, ssb_items, pd_filter, pd_items = all_projects(latest)
@@ -243,6 +274,20 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .grp{{margin:6px 0}} .alllist{{margin:6px 0 2px;padding-left:22px}} .alllist li{{font-size:13px;margin:3px 0;line-height:1.5}}
  .emptyhint{{color:#999;font-size:13px;padding:8px 0}}
  .note{{color:#999;font-size:12px;margin:-14px 0 20px;line-height:1.6}}
+ .pdlist{{list-style:none;padding:0;margin:6px 0}}
+ .pditem{{border-bottom:1px solid #eee}}
+ .pdhead{{display:flex;justify-content:space-between;gap:10px;padding:9px 4px;cursor:pointer;font-size:13px;align-items:baseline}}
+ .pdhead:hover{{background:#fafafa}}
+ .pdname{{font-weight:600}}
+ .pdkz{{color:#1a8f43;font-weight:600;margin-left:8px;font-size:12px}}
+ .badge{{font-size:11px;padding:1px 6px;border-radius:8px;margin-left:6px;color:#fff;white-space:nowrap}}
+ .s-yy{{background:#1a8f43}} .s-dg{{background:#e08a00}} .s-zj{{background:#888}} .s-ot{{background:#999}}
+ .pdright{{color:#666;text-align:right;margin-left:auto}}
+ .pddetail{{display:none;padding:2px 4px 12px}}
+ .pditem.open .pddetail{{display:block}}
+ .pdgrid{{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 14px}}
+ .pdcell{{font-size:12px;color:#333;line-height:1.5;word-break:break-all}}
+ .pdcell b{{color:#999;font-weight:400;margin-right:4px}}
 </style></head><body><div class="wrap">
 <h1>上海房源变化报表</h1>
 <div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每 30 分钟更新，页面每 30 分钟自动刷新</div></div>
@@ -285,8 +330,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <div class="allbox">
 <h3>明珠在线</h3>
 <div class="filters">{pd_filter}</div>
-<div class="emptyhint">勾选上方行政区以显示对应房源</div>
-<ul class="alllist">{pd_items}</ul>
+<ul class="pdlist" id="pdlist">{pd_items}</ul>
+<div class="note">* 可租套数按接口字段（kzts）提取，仅供参考，不保证当前有房。</div>
 </div>
 </div>
 
@@ -307,6 +352,23 @@ function applyAll(){{
 }}
 document.querySelectorAll('input.ga').forEach(function(el){{ el.addEventListener('change', applyAll); }});
 applyAll();
+function filterPd(){{
+  var mn=parseFloat((document.getElementById('pd_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
+  var mx=parseFloat((document.getElementById('pd_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
+  var mt=(document.getElementById('pd_fmetro')||{{}}).value||'';
+  var st=(document.getElementById('pd_fstatus')||{{}}).value||'';
+  document.querySelectorAll('#pdlist .pditem').forEach(function(li){{
+    var pmin=parseFloat(li.getAttribute('data-pmin'))||0;
+    var pmax=parseFloat(li.getAttribute('data-pmax'))||0;
+    var okP=(pmax>=mn)&&(pmin<=mx);
+    var okM=!mt||(li.getAttribute('data-metro')||'').indexOf(mt)>=0;
+    var okS=!st||li.getAttribute('data-status')===st;
+    li.style.display=(okP&&okM&&okS)?'':'none';
+  }});
+}}
+document.querySelectorAll('#pdlist .pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
+['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
+filterPd();
 </script>
 </body></html>"""
 
