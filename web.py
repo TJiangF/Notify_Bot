@@ -45,7 +45,7 @@ def index(base: str = Query(None)):
     html = report.render_html(
         cur, prev, snaps,
         base_options=options, selected_base=sel,
-        cur_label=cur.get("generated_at", "当前"),
+        cur_label=report.fmt_dt(cur.get("generated_at", "")),
         base_label=sel + " 12:00",
         auto_refresh=AUTO_REFRESH,
     )

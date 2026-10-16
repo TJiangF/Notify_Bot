@@ -2,10 +2,20 @@ import os
 import json
 import glob
 from collections import defaultdict
+from datetime import datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE, "data")
 OUT = os.path.join(BASE, "report.html")
+
+
+def fmt_dt(s):
+    if not s:
+        return "当前"
+    try:
+        return datetime.fromisoformat(str(s)).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(s)[:16].replace("T", " ")
 
 
 def load_snapshots():
