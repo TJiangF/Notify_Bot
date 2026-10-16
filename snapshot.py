@@ -26,6 +26,9 @@ def fetch_ssb_all():
         r.raise_for_status()
         j = r.json()
         if "data" not in j:
+            msg = str(j.get("message") or j.get("url") or j)
+            if "查询次数" in msg or "上限" in msg:
+                raise base.RateLimitError(msg)
             raise base.AuthError("随申办 Cookie 无效")
         inner = j["data"]
         if isinstance(inner, str):

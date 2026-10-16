@@ -100,6 +100,10 @@ class AuthError(Exception):
     pass
 
 
+class RateLimitError(Exception):
+    pass
+
+
 class PdAuthError(Exception):
     pass
 
@@ -121,7 +125,10 @@ def fetch_all():
         r.raise_for_status()
         j = r.json()
         if "data" not in j:
-            raise AuthError(j.get("url", str(j)))
+            msg = str(j.get("message") or j.get("url") or j)
+            if "查询次数" in msg or "上限" in msg:
+                raise RateLimitError(msg)
+            raise AuthError(msg)
         inner = j["data"]
         if isinstance(inner, str):
             inner = json.loads(inner)
@@ -145,7 +152,10 @@ def fetch_notice():
     r.raise_for_status()
     j = r.json()
     if "data" not in j:
-        raise AuthError(j.get("url", str(j)))
+        msg = str(j.get("message") or j.get("url") or j)
+        if "查询次数" in msg or "上限" in msg:
+            raise RateLimitError(msg)
+        raise AuthError(msg)
     inner = j["data"]
     if isinstance(inner, str):
         inner = json.loads(inner)
@@ -593,6 +603,10 @@ def run_once():
     cur = None
     try:
         cur = fetch_all()
+    except RateLimitError as e:
+        print("随申办限流：", e)
+        notify_err(state, ERR_SB,
+                   "⚠️ 随申办当日查询次数已用完（每日上限），将于次日 00:00 恢复；监控在此期间无法更新。")
     except AuthError as e:
         print("随申办 Cookie 失效：", e)
         notify_err(state, ERR_SB,

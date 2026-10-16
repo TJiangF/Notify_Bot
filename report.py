@@ -242,6 +242,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .filters input{{margin-right:4px;vertical-align:middle}}
  .grp{{margin:6px 0}} .alllist{{margin:6px 0 2px;padding-left:22px}} .alllist li{{font-size:13px;margin:3px 0;line-height:1.5}}
  .emptyhint{{color:#999;font-size:13px;padding:8px 0}}
+ .note{{color:#999;font-size:12px;margin:-14px 0 20px;line-height:1.6}}
 </style></head><body><div class="wrap">
 <h1>上海房源变化报表</h1>
 <div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每 30 分钟更新，页面每 30 分钟自动刷新</div></div>
@@ -260,10 +261,12 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2>随申办 · 按行政区</h2>
 <table><thead><tr><th>行政区</th><th>项目数</th><th>在线房源</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
 <tbody>{dist_table}</tbody></table>
+<div class="note">* "在线房源"取自平台自带字段（onlineFlatNum），仅代表该时刻的在线套数，不保证随时可租。</div>
 
 <h2>明珠在线 · 按行政区</h2>
 <table><thead><tr><th>行政区</th><th>项目数</th><th>可租套数</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
 <tbody>{pd_table}</tbody></table>
+<div class="note">* "可租套数"取自平台页面自带字段（kzts），不保证当前有房；显示 0 套表示该项目当前无可租房源（如已租满或尚未供应）。</div>
 
 <h2>变动明细（当前 vs 基线）</h2>
 <div class="box">
