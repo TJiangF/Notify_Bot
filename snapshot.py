@@ -41,46 +41,58 @@ def fetch_ssb_all():
     return out
 
 
+def map_ssb(ssb):
+    return [{
+        "id": r.get("projectId"),
+        "name": r.get("projectName"),
+        "district": r.get("districtName") or "未知",
+        "online": r.get("onlineFlatNum") or 0,
+        "total": r.get("totalFlatNum") or 0,
+        "rent_low": r.get("rentLow"),
+        "rent_high": r.get("rentHigh"),
+        "addr": r.get("projectLocation"),
+        "tel": r.get("projectTel"),
+    } for r in (ssb or [])]
+
+
+def map_pd(pd):
+    return [{
+        "id": r.get("projectId"),
+        "name": r.get("villageProjectName"),
+        "district": "浦东新区",
+        "kzts": r.get("kzts") or 0,
+        "status": r.get("projectStatusName"),
+        "addr": r.get("LOCATION"),
+        "tel": r.get("lxdh"),
+        "price": r.get("price_range"),
+        "metro": r.get("metro_subway") or [],
+        "zone": r.get("zoneName"),
+        "supply_date": r.get("supplyDate"),
+        "release_time": r.get("releaseTime"),
+        "fylx": r.get("xmfyzts") or [],
+    } for r in (pd or [])]
+
+
+def map_notice(notice):
+    return [{
+        "id": r.get("noticeId"),
+        "name": r.get("projectName"),
+        "addr": r.get("projectAddress"),
+        "rent": r.get("planRentLevel"),
+        "supply_date": r.get("planSupplyDate"),
+        "tel": r.get("contact"),
+        "org": r.get("orgName"),
+        "intro": r.get("introduction"),
+    } for r in (notice or [])]
+
+
 def build_snapshot(ssb, pd, notice):
     return {
         "date": base.now_bj().strftime("%Y-%m-%d"),
         "generated_at": base.now_bj().isoformat(timespec="seconds"),
-        "ssb": [{
-            "id": r.get("projectId"),
-            "name": r.get("projectName"),
-            "district": r.get("districtName") or "未知",
-            "online": r.get("onlineFlatNum") or 0,
-            "total": r.get("totalFlatNum") or 0,
-            "rent_low": r.get("rentLow"),
-            "rent_high": r.get("rentHigh"),
-            "addr": r.get("projectLocation"),
-            "tel": r.get("projectTel"),
-        } for r in ssb],
-        "pd": [{
-            "id": r.get("projectId"),
-            "name": r.get("villageProjectName"),
-            "district": "浦东新区",
-            "kzts": r.get("kzts") or 0,
-            "status": r.get("projectStatusName"),
-            "addr": r.get("LOCATION"),
-            "tel": r.get("lxdh"),
-            "price": r.get("price_range"),
-            "metro": r.get("metro_subway") or [],
-            "zone": r.get("zoneName"),
-            "supply_date": r.get("supplyDate"),
-            "release_time": r.get("releaseTime"),
-            "fylx": r.get("xmfyzts") or [],
-        } for r in (pd or [])],
-        "notice": [{
-            "id": r.get("noticeId"),
-            "name": r.get("projectName"),
-            "addr": r.get("projectAddress"),
-            "rent": r.get("planRentLevel"),
-            "supply_date": r.get("planSupplyDate"),
-            "tel": r.get("contact"),
-            "org": r.get("orgName"),
-            "intro": r.get("introduction"),
-        } for r in (notice or [])],
+        "ssb": map_ssb(ssb),
+        "pd": map_pd(pd),
+        "notice": map_notice(notice),
     }
 
 
