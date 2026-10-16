@@ -186,7 +186,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             f'　在线 {x["online"]} 套　{esc(x.get("addr"))}　电话 {esc(x.get("tel"))}</li>'
             for x in sorted(ssb, key=lambda a: (a["district"], -(a["online"] or 0))))
         pd = latest["pd"]
-        metros = sorted({m for x in pd for m in (x.get("metro") or [])})
+        metros = sorted({m.split("/")[0].strip() for x in pd for m in (x.get("metro") or []) if m})
         statuses = sorted({x.get("status") for x in pd if x.get("status")})
         metro_opts = "".join(f'<option value="{esc(m)}">{esc(m)}</option>' for m in metros)
         status_opts = "".join(f'<option value="{esc(s)}">{esc(s)}</option>' for s in statuses)
@@ -206,6 +206,12 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             pmin = min(nums) if nums else 0
             pmax = max(nums) if nums else 0
             metro = "、".join(x.get("metro") or [])
+            mlines = []
+            for m in (x.get("metro") or []):
+                ln = m.split("/")[0].strip()
+                if ln and ln not in mlines:
+                    mlines.append(ln)
+            metro_key = "、".join(mlines)
             status = x.get("status") or ""
             fylx = "、".join(x.get("fylx") or [])
             cats = []
@@ -225,7 +231,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
             badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
             pitems.append(
-                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
+                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">可租 {x["kzts"]} 套</span></span>'
                 f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
@@ -293,18 +299,26 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .note-top{{color:#999;font-size:12px;margin:2px 0 10px;line-height:1.6}}
  .pdlist{{list-style:none;padding:0;margin:6px 0}}
  .pditem{{border-bottom:1px solid #eee}}
- .pdhead{{display:flex;justify-content:space-between;gap:10px;padding:9px 4px;cursor:pointer;font-size:13px;align-items:baseline}}
+ .pdhead{{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;padding:10px 4px;cursor:pointer;font-size:14px;align-items:baseline}}
  .pdhead:hover{{background:#fafafa}}
  .pdname{{font-weight:600}}
  .pdkz{{color:#1a8f43;font-weight:600;margin-left:8px;font-size:12px}}
  .badge{{font-size:11px;padding:1px 6px;border-radius:8px;margin-left:6px;color:#fff;white-space:nowrap}}
  .s-yy{{background:#1a8f43}} .s-dg{{background:#e08a00}} .s-zj{{background:#888}} .s-ot{{background:#999}}
- .pdright{{color:#666;text-align:right;margin-left:auto}}
- .pddetail{{display:none;padding:2px 4px 12px}}
+ .pdright{{color:#888;text-align:right;margin-left:auto;font-size:12px}}
+ .pddetail{{display:none;padding:4px 4px 14px}}
  .pditem.open .pddetail{{display:block}}
- .pdgrid{{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 14px}}
- .pdcell{{font-size:12px;color:#333;line-height:1.5;word-break:break-all}}
- .pdcell b{{color:#999;font-weight:400;margin-right:4px}}
+ .pdgrid{{display:block}}
+ .pdcell{{display:block;font-size:13px;color:#333;line-height:1.9;word-break:break-all}}
+ .pdcell b{{color:#999;font-weight:400;margin-right:6px;display:inline-block;min-width:44px}}
+ @media (max-width:640px){{
+   .wrap{{padding:12px}}
+   h1{{font-size:19px}}
+   .pdhead{{font-size:13px}}
+   .pdright{{width:100%;text-align:left;margin-left:0}}
+   th,td{{font-size:12px;padding:6px 5px}}
+   .card .n{{font-size:20px}}
+ }}
 </style></head><body><div class="wrap">
 <h1>上海房源变化报表</h1>
 <div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每 30 分钟更新，页面每 30 分钟自动刷新</div></div>
