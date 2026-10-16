@@ -56,6 +56,30 @@ HEARTBEAT_KEY = "__last_heartbeat_hour__"
 SCOPE_KEY = "__scope__"
 PD_PROJECTS_KEY = "__pd_projects__"
 HEARTBEAT_HOURS = set(range(8, 21)) | {22}
+QUIET_START, QUIET_END = 0, 8
+
+try:
+    sys.path.insert(0, BASE_DIR)
+    import config as _cfgmod
+    _c = _cfgmod.load()
+    if _c.get("wecom_webhook"):
+        WEBHOOK = _c["wecom_webhook"]
+    if _c.get("serverchan_key"):
+        SERVERCHAN_KEY = _c["serverchan_key"]
+    if _c.get("keywords"):
+        KEYWORDS = _c["keywords"]
+    if _c.get("ignore"):
+        IGNORE = _c["ignore"]
+    if _c.get("district_id"):
+        DISTRICT_ID = _c["district_id"]
+    if _c.get("district_name"):
+        DISTRICT_NAME = _c["district_name"]
+    if _c.get("heartbeat_hours"):
+        HEARTBEAT_HOURS = set(int(h) for h in _c["heartbeat_hours"])
+    QUIET_START = int(_c.get("quiet_start", 0))
+    QUIET_END = int(_c.get("quiet_end", 8))
+except Exception:
+    pass
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -299,7 +323,8 @@ def now_bj():
 
 
 def in_quiet_hours():
-    return 0 <= now_bj().hour < 8
+    h = now_bj().hour
+    return QUIET_START <= h < QUIET_END
 
 
 def send_wecom(text):
@@ -673,29 +698,6 @@ def run_once():
 
     state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
     save_state(state)
-
-    maybe_daily_snapshot(bj)
-
-
-def maybe_daily_snapshot(bj):
-    if bj.hour < 12:
-        return
-    snap = os.path.join(BASE_DIR, "data", bj.strftime("%Y-%m-%d") + ".json")
-    if os.path.exists(snap):
-        try:
-            with open(snap) as f:
-                gen = json.load(f).get("generated_at", "")
-            gen_hour = int(gen[11:13]) if len(gen) >= 13 else 0
-        except Exception:
-            gen_hour = 0
-        if gen_hour >= 12:
-            return
-    try:
-        subprocess.run([sys.executable, os.path.join(BASE_DIR, "snapshot.py")], check=False)
-        subprocess.run([sys.executable, os.path.join(BASE_DIR, "report.py")], check=False)
-        print("已完成每日存档与报表")
-    except Exception as e:
-        print("每日存档失败：", repr(e))
 
 
 def run_loop():
