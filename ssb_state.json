@@ -391,43 +391,7 @@
     }
   },
   "__pd_remember__": "gAAAAABqzzJw1heVOiLaLStfrmSRWjyM-NzhhnjY9kjMEBHDo_5NyDB2JgTxsdYT53GITG_i2crWGHrLEmNx4G0sFbZiLAvVKbzDcGiJ6b-Pgj7eIogOZvWIXN6BcYoKtwTpAwSUIx_quGLELQLx8OAGtxUBuOU8CkEozMYUCbhGQl4gmkzZz2s=",
-  "__notices__": {
-    "676": {
-      "name": "筑寓 高行居",
-      "supplyDate": "2026-10-16",
-      "address": "东靖路669弄（浦江东旭公寓）",
-      "rent": "81.43",
-      "contact": "18516363998"
-    },
-    "677": {
-      "name": "壹间公寓虹桥公馆一期",
-      "supplyDate": "2026-10-15",
-      "address": "上海市青浦区徐泾镇泾茉路118弄1、2、3、5号",
-      "rent": "102.6元/m²月",
-      "contact": "13310123080"
-    },
-    "680": {
-      "name": "晖筑自如寓",
-      "supplyDate": "2026-10-15",
-      "address": "瑞金南路428号",
-      "rent": "225.8",
-      "contact": "13127550273"
-    },
-    "678": {
-      "name": "众赢保租住宅四期",
-      "supplyDate": "2026-10-15",
-      "address": "黄浦区瞿溪路883弄",
-      "rent": "3726-5337元",
-      "contact": "13641666558"
-    },
-    "679": {
-      "name": "佘北家园悦涧庭",
-      "supplyDate": "2026-10-15",
-      "address": "佘山镇马尾山路609弄44号、45号",
-      "rent": "1412-2248元",
-      "contact": "15021196751"
-    }
-  },
+  "__notices__": {},
   "4739": {
     "online": 3180,
     "total": 3180,
