@@ -195,6 +195,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             ' - <input id="pd_fmax" type="number" placeholder="最高" style="width:72px"></label>'
             f'<label>地铁：<select id="pd_fmetro"><option value="">全部</option>{metro_opts}</select></label>'
             f'<label>状态：<select id="pd_fstatus"><option value="">全部</option>{status_opts}</select></label>'
+            '<label>户型：<select id="pd_ffy"><option value="">全部</option>'
+            '<option value="一室">一室</option><option value="二室">二室</option><option value="三室">三室</option></select></label>'
             '<button type="button" onclick="filterPd()">筛选</button>'
         )
         pitems = []
@@ -206,10 +208,24 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             metro = "、".join(x.get("metro") or [])
             status = x.get("status") or ""
             fylx = "、".join(x.get("fylx") or [])
+            cats = []
+            for item in (x.get("fylx") or []):
+                nm = re.sub(r"\d+(套|间)?$", "", item).strip()
+                if nm.startswith("一室"):
+                    c = "一室"
+                elif nm.startswith(("二室", "两室")):
+                    c = "二室"
+                elif nm.startswith("三室"):
+                    c = "三室"
+                else:
+                    c = ""
+                if c and c not in cats:
+                    cats.append(c)
+            fyc = "、".join(cats)
             cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
             badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
             pitems.append(
-                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro)}" data-status="{esc(status)}">'
+                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">可租 {x["kzts"]} 套</span></span>'
                 f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
@@ -274,6 +290,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .grp{{margin:6px 0}} .alllist{{margin:6px 0 2px;padding-left:22px}} .alllist li{{font-size:13px;margin:3px 0;line-height:1.5}}
  .emptyhint{{color:#999;font-size:13px;padding:8px 0}}
  .note{{color:#999;font-size:12px;margin:-14px 0 20px;line-height:1.6}}
+ .note-top{{color:#999;font-size:12px;margin:2px 0 10px;line-height:1.6}}
  .pdlist{{list-style:none;padding:0;margin:6px 0}}
  .pditem{{border-bottom:1px solid #eee}}
  .pdhead{{display:flex;justify-content:space-between;gap:10px;padding:9px 4px;cursor:pointer;font-size:13px;align-items:baseline}}
@@ -329,9 +346,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 </div>
 <div class="allbox">
 <h3>明珠在线</h3>
+<div class="note note-top">* 可租套数按接口字段（kzts）提取，仅供参考，不保证当前有房。</div>
 <div class="filters">{pd_filter}</div>
 <ul class="pdlist" id="pdlist">{pd_items}</ul>
-<div class="note">* 可租套数按接口字段（kzts）提取，仅供参考，不保证当前有房。</div>
 </div>
 </div>
 
@@ -357,17 +374,19 @@ function filterPd(){{
   var mx=parseFloat((document.getElementById('pd_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
   var mt=(document.getElementById('pd_fmetro')||{{}}).value||'';
   var st=(document.getElementById('pd_fstatus')||{{}}).value||'';
+  var fy=(document.getElementById('pd_ffy')||{{}}).value||'';
   document.querySelectorAll('#pdlist .pditem').forEach(function(li){{
     var pmin=parseFloat(li.getAttribute('data-pmin'))||0;
     var pmax=parseFloat(li.getAttribute('data-pmax'))||0;
     var okP=(pmax>=mn)&&(pmin<=mx);
     var okM=!mt||(li.getAttribute('data-metro')||'').indexOf(mt)>=0;
     var okS=!st||li.getAttribute('data-status')===st;
-    li.style.display=(okP&&okM&&okS)?'':'none';
+    var okF=!fy||(li.getAttribute('data-fy')||'').indexOf(fy)>=0;
+    li.style.display=(okP&&okM&&okS&&okF)?'':'none';
   }});
 }}
 document.querySelectorAll('#pdlist .pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
-['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
+['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
 filterPd();
 </script>
 </body></html>"""
