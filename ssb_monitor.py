@@ -151,7 +151,7 @@ def _fetch_all_cookie(ck):
         res = d.get("results", [])
         out.extend(res)
         record_usage(1, len(res))
-        if page * d.get("pageSize", PAGE_SIZE) >= d.get("totalCount", 0):
+        if page * PAGE_SIZE >= d.get("totalCount", 0):
             break
         page += 1
     return out
@@ -198,7 +198,7 @@ def fetch_qnaj():
         for it in res:
             ids.add(str(it.get("projectId")))
         record_usage(1, len(res))
-        if page * d.get("pageSize", PAGE_SIZE) >= d.get("totalCount", 0):
+        if page * PAGE_SIZE >= d.get("totalCount", 0):
             break
         page += 1
     return ids
