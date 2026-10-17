@@ -382,25 +382,27 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .pdright{{color:#888;text-align:right;font-size:12px}}
  .cmp-add{{font-size:12px;padding:3px 10px;border:1px solid #2563eb;color:#2563eb;background:#fff;border-radius:14px;cursor:pointer;white-space:nowrap}}
  .cmp-add:hover{{background:#2563eb;color:#fff}}
- .cmp-fab{{position:fixed;right:18px;bottom:18px;z-index:70;background:#2563eb;color:#fff;border:0;border-radius:22px;padding:11px 18px;box-shadow:0 6px 18px rgba(37,99,235,.45);cursor:pointer;font-size:14px}}
+ .cmp-fab{{position:fixed;right:18px;bottom:18px;z-index:90;background:#2563eb;color:#fff;border:0;border-radius:22px;padding:11px 18px;box-shadow:0 6px 18px rgba(37,99,235,.45);cursor:pointer;font-size:14px}}
  .cmp-fab:hover{{background:#1d4ed8}}
- .cmp{{position:fixed;right:18px;bottom:72px;z-index:70;width:400px;max-width:92vw;max-height:72vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden}}
+ .cmp{{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:92vw;height:90vh;z-index:100;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden}}
  .cmp.open{{display:flex}}
- .cmp-head{{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-bottom:1px solid #eef0f3;font-weight:600;font-size:14px}}
- .cmp-clear{{font-size:12px;color:#999;font-weight:400;cursor:pointer;background:none;border:0}}
- .cmp-list{{overflow:auto;padding:6px;background:#fafbfc}}
- .cmp-row{{display:flex;gap:8px;align-items:flex-start;padding:9px;border:1px solid #e6e8eb;border-radius:10px;margin:6px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03)}}
- .cmp-row.cmp-dragging{{opacity:.45;border-style:dashed}}
- .cmp-x{{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:0;background:#f43f5e;color:#fff;cursor:pointer;line-height:1;font-size:14px;padding:0}}
+ .cmp-head{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #eef0f3;font-weight:600;font-size:15px}}
+ .cmp-actions{{display:flex;align-items:center;gap:16px}}
+ .cmp-clear{{font-size:13px;color:#999;font-weight:400;cursor:pointer;background:none;border:0}}
+ .cmp-clear:hover{{color:#f43f5e}}
+ .cmp-close{{font-size:22px;line-height:1;background:none;border:0;color:#555;cursor:pointer;padding:0 2px}}
+ .cmp-scroll{{overflow:auto;flex:1;background:#fafbfc;position:relative}}
+ .cmptab{{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}}
+ .cmptab th{{position:sticky;top:0;background:#f4f6f9;color:#555;font-weight:600;text-align:left;padding:9px 12px;border-bottom:1px solid #e6e8eb;white-space:nowrap}}
+ .cmptab td{{padding:8px 12px;border-bottom:1px solid #eef0f3;vertical-align:top;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}}
+ .cmptab tr.cmp-dragging td{{background:#eef4fd}}
+ .cmptab .c-x{{width:36px;text-align:center;padding:6px}}
+ .cmptab .c-name{{font-weight:600;max-width:220px}}
+ .cmptab .c-intro{{max-width:340px}}
+ .cmp-x{{width:22px;height:22px;border-radius:50%;border:0;background:#f43f5e;color:#fff;cursor:pointer;line-height:1;font-size:14px;padding:0}}
  .cmp-x:hover{{background:#e11d48}}
- .cmp-handle{{flex:0 0 auto;cursor:grab;color:#c0c4cc;font-size:14px;user-select:none;line-height:22px}}
- .cmp-body{{flex:1;min-width:0}}
- .cmp-name{{font-weight:600;font-size:13px;margin-bottom:4px}}
- .cmp-meta{{display:flex;flex-wrap:wrap;gap:4px 6px}}
- .cmp-chip{{font-size:11px;color:#555;background:#f2f5f9;border-radius:6px;padding:2px 7px;line-height:1.5}}
- .cmp-chip b{{color:#999;font-weight:400}}
- .cmp-empty{{color:#999;font-size:13px;padding:22px;text-align:center}}
- .cmp-src{{font-size:10px;color:#fff;background:#9aa4b2;border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle}}
+ .cmp-src{{font-size:10px;color:#fff;background:#9aa4b2;border-radius:5px;padding:1px 6px;margin-left:6px;white-space:nowrap}}
+ .cmp-empty{{color:#999;font-size:13px;padding:32px;text-align:center}}
  .pddetail{{display:none;padding:4px 4px 14px}}
  .pditem.open .pddetail{{display:block}}
  .pdgrid{{display:block}}
@@ -414,7 +416,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
    .pdright{{text-align:left}}
    th,td{{font-size:12px;padding:6px 5px}}
    .card .n{{font-size:20px}}
-   .cmp{{left:8px;right:8px;width:auto;bottom:66px}}
+   .cmp{{width:96vw;height:94vh}}
  }}
 </style></head><body>
 <div id="sidebar"><div class="sb-inner">
@@ -480,8 +482,13 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 </div>
 <button id="cmpFab" class="cmp-fab" onclick="toggleCompare()">对比 <span id="cmpFabN">0</span></button>
 <div id="cmpPanel" class="cmp">
-  <div class="cmp-head"><span>对比清单 <span id="cmpN">0</span></span><button class="cmp-clear" onclick="clearCompare()">清空</button></div>
-  <div class="cmp-list" id="cmpList"></div>
+  <div class="cmp-head"><span>对比清单 <span id="cmpN">0</span></span>
+    <div class="cmp-actions"><button class="cmp-clear" onclick="clearCompare()">清空</button><button class="cmp-close" onclick="toggleCompare()">×</button></div>
+  </div>
+  <div class="cmp-scroll">
+    <table class="cmptab"><thead id="cmpThead"></thead><tbody id="cmpTbody"></tbody></table>
+    <div id="cmpEmpty" class="cmp-empty">还没有加入对比的房源</div>
+  </div>
 </div>
 <script>
 function filterSb(){{
@@ -608,51 +615,53 @@ function addCompare(ev, btn){{
   var name=li.getAttribute('data-name')||'';
   var src=li.closest('#sblist')?'随申办':'明珠在线';
   var right=((li.querySelector('.pdright')||{{}}).textContent||'').trim();
+  var parts=right.split('·').map(function(s){{ return s.trim(); }});
+  var addr=parts[0]||'', tel=parts[1]||'';
   var kz=((li.querySelector('.pdkz')||{{}}).textContent||'').trim();
-  var details=[];
+  var fields={{}};
   li.querySelectorAll('.pdgrid .pdcell').forEach(function(c){{
-    var b=c.querySelector('b'); var lab=b?b.textContent:'';
-    details.push([lab, c.textContent.substring(lab.length).trim()]);
+    var b=c.querySelector('b'); var lab=b?b.textContent.trim():'';
+    fields[lab]=c.textContent.substring((b?b.textContent:'').length).trim();
   }});
-  var key=src+'|'+name+'|'+right;
+  var key=src+'|'+name+'|'+addr;
   if(compareList.some(function(x){{ return x.key===key; }})){{ btn.textContent='已加入'; return; }}
-  compareList.push({{key:key,name:name,src:src,right:right,kz:kz,details:details}});
+  compareList.push({{key:key,name:name,src:src,kz:kz,addr:addr,tel:tel,fields:fields}});
   cmpSave(); renderCompare(); btn.textContent='已加入';
 }}
+var CMP_COLS=["套数","租金","户型","地铁","板块","状态","供应","受理","发布","地址","电话","介绍"];
 function renderCompare(){{
-  var list=document.getElementById('cmpList'); if(!list) return;
+  var thead=document.getElementById('cmpThead'), tbody=document.getElementById('cmpTbody');
+  if(!thead||!tbody) return;
   var n=compareList.length;
   var e1=document.getElementById('cmpN'); if(e1) e1.textContent=n;
   var e2=document.getElementById('cmpFabN'); if(e2) e2.textContent=n;
-  list.innerHTML='';
-  if(!n){{ var d=document.createElement('div'); d.className='cmp-empty'; d.textContent='还没有加入对比的房源'; list.appendChild(d); return; }}
+  var emp=document.getElementById('cmpEmpty'); if(emp) emp.style.display=n?'none':'block';
+  thead.innerHTML='<tr><th class="c-x"></th><th class="c-name">名称</th>'+CMP_COLS.map(function(c){{ return '<th>'+c+'</th>'; }}).join('')+'</tr>';
+  tbody.innerHTML='';
   compareList.forEach(function(it, idx){{
-    var row=document.createElement('div'); row.className='cmp-row'; row.setAttribute('draggable','true'); row.dataset.idx=idx;
+    var tr=document.createElement('tr'); tr.setAttribute('draggable','true'); tr.dataset.idx=idx;
+    var tdx=document.createElement('td'); tdx.className='c-x';
     var x=document.createElement('button'); x.className='cmp-x'; x.textContent='×';
     x.addEventListener('click', function(e){{ e.stopPropagation(); compareList.splice(idx,1); cmpSave(); renderCompare(); }});
-    var h=document.createElement('span'); h.className='cmp-handle'; h.textContent='⋮⋮';
-    var body=document.createElement('div'); body.className='cmp-body';
-    var nm=document.createElement('div'); nm.className='cmp-name'; nm.textContent=it.name;
-    var sc=document.createElement('span'); sc.className='cmp-src'; sc.textContent=it.src; nm.appendChild(sc);
-    body.appendChild(nm);
-    var meta=document.createElement('div'); meta.className='cmp-meta';
-    if(it.kz){{ var c0=document.createElement('span'); c0.className='cmp-chip'; c0.textContent=it.kz; meta.appendChild(c0); }}
-    it.details.forEach(function(dd){{
-      var s=document.createElement('span'); s.className='cmp-chip';
-      var bb=document.createElement('b'); bb.textContent=dd[0]+' '; s.appendChild(bb); s.appendChild(document.createTextNode(dd[1])); meta.appendChild(s);
+    tdx.appendChild(x); tr.appendChild(tdx);
+    var tdn=document.createElement('td'); tdn.className='c-name'; tdn.textContent=it.name; tdn.title=it.name;
+    var sc=document.createElement('span'); sc.className='cmp-src'; sc.textContent=it.src; tdn.appendChild(sc); tr.appendChild(tdn);
+    CMP_COLS.forEach(function(c){{
+      var td=document.createElement('td');
+      var v=(c==='套数')?it.kz:(c==='地址')?it.addr:(c==='电话')?it.tel:(it.fields[c]||'');
+      if(c==='介绍') td.className='c-intro';
+      td.textContent=v; if(v) td.title=v;
+      tr.appendChild(td);
     }});
-    if(it.right){{ var cr=document.createElement('span'); cr.className='cmp-chip'; cr.textContent=it.right; meta.appendChild(cr); }}
-    body.appendChild(meta);
-    row.appendChild(x); row.appendChild(h); row.appendChild(body);
-    list.appendChild(row);
+    tbody.appendChild(tr);
   }});
 }}
 var cmpDragIdx=null;
-document.addEventListener('dragstart', function(e){{ var r=e.target.closest&&e.target.closest('.cmp-row'); if(r){{ cmpDragIdx=+r.dataset.idx; r.classList.add('cmp-dragging'); }} }});
-document.addEventListener('dragend', function(e){{ var r=e.target.closest&&e.target.closest('.cmp-row'); if(r) r.classList.remove('cmp-dragging'); }});
-document.addEventListener('dragover', function(e){{ if(e.target.closest&&e.target.closest('.cmp-list')) e.preventDefault(); }});
+document.addEventListener('dragstart', function(e){{ var r=e.target.closest&&e.target.closest('.cmptab tr'); if(r){{ cmpDragIdx=+r.dataset.idx; r.classList.add('cmp-dragging'); }} }});
+document.addEventListener('dragend', function(e){{ var r=e.target.closest&&e.target.closest('.cmptab tr'); if(r) r.classList.remove('cmp-dragging'); }});
+document.addEventListener('dragover', function(e){{ if(e.target.closest&&e.target.closest('.cmp-scroll')) e.preventDefault(); }});
 document.addEventListener('drop', function(e){{
-  var r=e.target.closest&&e.target.closest('.cmp-row'); if(!r||cmpDragIdx===null) return;
+  var r=e.target.closest&&e.target.closest('.cmptab tr'); if(!r||cmpDragIdx===null) return;
   e.preventDefault(); var over=+r.dataset.idx;
   if(over!==cmpDragIdx){{ var it=compareList.splice(cmpDragIdx,1)[0]; compareList.splice(over,0,it); cmpSave(); renderCompare(); }}
   cmpDragIdx=null;
