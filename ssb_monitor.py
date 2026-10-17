@@ -18,6 +18,8 @@ SERVERCHAN_KEY = os.environ.get("SERVERCHAN_SENDKEY", "")
 SERVERCHAN_HEARTBEAT = os.environ.get("SERVERCHAN_HEARTBEAT", "0").lower() in ("1", "true", "yes")
 
 COOKIE = os.environ.get("SSB_COOKIE", "")
+SB_COOKIES = [c.strip() for c in [os.environ.get("SSB_COOKIE", ""), os.environ.get("SSB_COOKIE2", "")] if c.strip()]
+ACTIVE_COOKIE = SB_COOKIES[0] if SB_COOKIES else ""
 DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "")
 DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "全市")
 PD_COOKIE = os.environ.get("PD_COOKIE", "")
@@ -113,7 +115,14 @@ class PdAuthError(Exception):
     pass
 
 
-def fetch_all():
+def _headers(cookie):
+    h = dict(HEADERS)
+    if cookie:
+        h["Cookie"] = cookie
+    return h
+
+
+def _fetch_all_cookie(ck):
     param = {
         "districtId": DISTRICT_ID, "doorType": "", "rentHigh": "", "rentLow": "",
         "searchWord": "", "street": [], "supplyWay": "",
@@ -126,7 +135,7 @@ def fetch_all():
             {"pageNo": page, "pageSize": PAGE_SIZE, "param": param},
             ensure_ascii=False,
         )}
-        r = requests.post(API, headers=HEADERS, data=data, timeout=25)
+        r = requests.post(API, headers=_headers(ck), data=data, timeout=25)
         r.raise_for_status()
         j = r.json()
         if "data" not in j:
@@ -147,13 +156,31 @@ def fetch_all():
     return out
 
 
+def fetch_all():
+    global ACTIVE_COOKIE
+    errs = []
+    for ck in SB_COOKIES:
+        try:
+            out = _fetch_all_cookie(ck)
+            if ck != ACTIVE_COOKIE:
+                print("随申办：已切换到备用账号")
+            ACTIVE_COOKIE = ck
+            return out
+        except (RateLimitError, AuthError) as e:
+            errs.append(e)
+            continue
+    if errs:
+        raise errs[-1]
+    raise AuthError("未配置任何随申办 Cookie")
+
+
 def fetch_notice():
     body = json.dumps({"pageNo": 1, "pageSize": 100, "param": {"noticeId": ""}}, ensure_ascii=False)
     headers = {
         "Origin": "https://zwdt.sh.gov.cn",
         "Referer": "https://zwdt.sh.gov.cn/smzy/sh_zf_onething_mobile/rent-house/assurance-find",
         "User-Agent": UA,
-        "Cookie": COOKIE,
+        "Cookie": ACTIVE_COOKIE or COOKIE,
     }
     r = requests.post(NOTICE_API, headers=headers, files={"params": (None, body)}, timeout=25)
     r.raise_for_status()
