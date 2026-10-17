@@ -58,6 +58,7 @@ SCOPE_KEY = "__scope__"
 PD_PROJECTS_KEY = "__pd_projects__"
 HEARTBEAT_HOURS = set(range(8, 21)) | {22}
 QUIET_START, QUIET_END = 0, 8
+SCHED_START, SCHED_END, SCHED_EXTRA = 8, 19, {20, 21, 22, 0}
 
 try:
     sys.path.insert(0, BASE_DIR)
@@ -79,6 +80,9 @@ try:
         HEARTBEAT_HOURS = set(int(h) for h in _c["heartbeat_hours"])
     QUIET_START = int(_c.get("quiet_start", 0))
     QUIET_END = int(_c.get("quiet_end", 8))
+    SCHED_START = int(_c.get("sched_start", 8))
+    SCHED_END = int(_c.get("sched_end", 19))
+    SCHED_EXTRA = set(int(h) for h in _c.get("sched_extra_hours", [20, 21, 22, 0]))
 except Exception:
     pass
 
@@ -340,16 +344,17 @@ def now_bj():
 USAGE_FILE = os.path.join(BASE_DIR, "data", "usage.json")
 
 
-def record_usage(nreq=0, nrec=0):
+def record_usage(nreq=0, nrec=0, src="ssb"):
     try:
+        path = USAGE_FILE if src == "ssb" else os.path.join(BASE_DIR, "data", "usage_pd.json")
         d = {}
-        if os.path.exists(USAGE_FILE):
-            d = json.load(open(USAGE_FILE))
+        if os.path.exists(path):
+            d = json.load(open(path))
         today = now_bj().strftime("%Y-%m-%d")
         e = d.setdefault(today, {"req": 0, "rec": 0})
         e["req"] += nreq
         e["rec"] += nrec
-        json.dump(d, open(USAGE_FILE, "w"))
+        json.dump(d, open(path, "w"))
     except Exception:
         pass
 
@@ -672,6 +677,8 @@ def run_once(report=False):
         except Exception as e:
             print("明珠在线抓取失败：", repr(e))
             notify_err(state, ERR_PD, f"⚠️ 明珠在线获取数据失败：{type(e).__name__}: {e}")
+    if pd is not None:
+        record_usage(2, len(pd), "pd")
 
     notice = None
     if cur_all is not None:
@@ -769,14 +776,13 @@ def run_once(report=False):
         write_report(cur_all, pd, notice, daily=(bj.hour == 12))
 
 
-SCHED20_HOURS = set(range(8, 19))
-SCHED_POINT_HOURS = {19, 20, 21, 22, 0}
-
-
 def is_scheduled(bj):
-    if bj.hour in SCHED20_HOURS and bj.minute in (0, 20, 40):
+    h, mi = bj.hour, bj.minute
+    if SCHED_START <= h < SCHED_END and mi in (0, 20, 40):
         return True
-    if bj.hour in SCHED_POINT_HOURS and bj.minute == 0:
+    if h == SCHED_END and mi == 0:
+        return True
+    if h in SCHED_EXTRA and mi == 0:
         return True
     return False
 

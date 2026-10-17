@@ -15,6 +15,9 @@ DEFAULTS = {
     "quiet_start": 0,
     "quiet_end": 8,
     "default_base_days": 1,
+    "sched_start": 8,
+    "sched_end": 19,
+    "sched_extra_hours": [20, 21, 22, 0],
 }
 
 

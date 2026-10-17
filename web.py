@@ -18,10 +18,19 @@ AUTO_REFRESH = int(os.environ.get("SSB_REFRESH_SEC", "3600"))
 BJ = timezone(timedelta(hours=8))
 DATA_DIR = os.path.join(BASE, "data")
 VISITS_FILE = os.path.join(DATA_DIR, "visits.json")
+USAGE_SB = os.path.join(DATA_DIR, "usage.json")
+USAGE_PD = os.path.join(DATA_DIR, "usage_pd.json")
+
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=SECRET)
 
 
-def bump_visit():
-    today = datetime.now(BJ).date().isoformat()
+def _now():
+    return datetime.now(BJ)
+
+
+def bump_visit(ip):
+    today = _now().strftime("%Y-%m-%d")
     d = {}
     if os.path.exists(VISITS_FILE):
         try:
@@ -29,8 +38,12 @@ def bump_visit():
         except Exception:
             d = {}
     d["total"] = int(d.get("total", 0)) + 1
-    days = d.setdefault("days", {})
-    days[today] = int(days.get(today, 0)) + 1
+    d.setdefault("days", {})
+    d["days"][today] = int(d["days"].get(today, 0)) + 1
+    d.setdefault("ip", {})
+    d["ip"][ip] = int(d["ip"].get(ip, 0)) + 1
+    d.setdefault("ip_days", {}).setdefault(today, {})
+    d["ip_days"][today][ip] = int(d["ip_days"][today].get(ip, 0)) + 1
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
         json.dump(d, open(VISITS_FILE, "w"))
@@ -45,26 +58,38 @@ def visit_stats():
             d = json.load(open(VISITS_FILE))
         except Exception:
             d = {}
-    today = datetime.now(BJ).date().isoformat()
-    return int(d.get("total", 0)), int(d.get("days", {}).get(today, 0))
+    today = _now().strftime("%Y-%m-%d")
+    today_map = d.get("ip_days", {}).get(today, {})
+    ips = sorted(today_map.items(), key=lambda x: -x[1])
+    return int(d.get("total", 0)), int(d.get("days", {}).get(today, 0)), len(today_map), ips
 
-app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=SECRET)
+
+def read_usage(path):
+    if os.path.exists(path):
+        try:
+            return json.load(open(path))
+        except Exception:
+            return {}
+    return {}
 
 
-def pick_default_base(snaps, days):
-    today = datetime.now(BJ).date()
-    target = (today - timedelta(days=days)).strftime("%Y-%m-%d")
-    dates = [s["date"] for s in snaps]
-    if target in dates:
-        return target
-    earlier = [d for d in dates if d < today.strftime("%Y-%m-%d")]
-    return earlier[-1] if earlier else dates[-1]
+def schedule_times(cfg):
+    out = []
+    st = int(cfg.get("sched_start", 8))
+    en = int(cfg.get("sched_end", 19))
+    for h in range(st, en):
+        for m in (0, 20, 40):
+            out.append(f"{h:02d}:{m:02d}")
+    out.append(f"{en:02d}:00")
+    for h in sorted(set(int(x) for x in cfg.get("sched_extra_hours", []))):
+        out.append(f"{h:02d}:00")
+    return out
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(base: str = Query(None)):
-    bump_visit()
+def index(request: Request, base: str = Query(None)):
+    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "?")
+    bump_visit(ip)
     cur = report.load_current()
     snaps = report.load_snapshots()
     if not snaps:
@@ -72,7 +97,7 @@ def index(base: str = Query(None)):
     options = [(s["date"], s["date"] + " 12:00") for s in sorted(snaps, key=lambda x: x["date"], reverse=True)]
     cfg = cfgmod.load()
     valid = {b for b, _ in options}
-    sel = base if (base in valid) else pick_default_base(snaps, int(cfg.get("default_base_days", 1)))
+    sel = base if (base in valid) else _pick_base(snaps, int(cfg.get("default_base_days", 1)))
     prev = next((s for s in snaps if s["date"] == sel), snaps[-1])
     html = report.render_html(
         cur, prev, snaps,
@@ -84,60 +109,156 @@ def index(base: str = Query(None)):
     return HTMLResponse(html)
 
 
-def _admin_page(request, msg="", err=""):
-    cfg = cfgmod.load()
-    vtotal, vtoday = visit_stats()
-    usage = ""
-    try:
-        u = json.load(open(os.path.join(DATA_DIR, "usage.json")))
-        e = u.get(datetime.now(BJ).strftime("%Y-%m-%d"), {})
-        usage = f"随申办今日调用 {e.get('req',0)} 次请求 / {e.get('rec',0)} 条记录"
-    except Exception:
-        usage = ""
-    logged = request.session.get("admin")
-    if not logged:
-        return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>管理登录</title>
-<style>body{{font-family:-apple-system,"PingFang SC",sans-serif;background:#f5f6f8}}
-.box{{max-width:340px;margin:80px auto;background:#fff;padding:24px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
-input{{width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box}}
-button{{padding:8px 14px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}}
-.err{{color:#dc2626;margin:8px 0}}</style></head><body>
-<div class="box"><h3>管理登录</h3>{('<div class=err>'+err+'</div>') if err else ''}
-<form method=post action="{ADMIN_PATH}/login"><p><input type=password name=pw placeholder=管理密码></p>
-<p><button>登录</button></p></form></div></body></html>""")
+def _pick_base(snaps, days):
+    today = _now().date()
+    target = (today - timedelta(days=days)).strftime("%Y-%m-%d")
+    dates = [s["date"] for s in snaps]
+    if target in dates:
+        return target
+    earlier = [d for d in dates if d < today.strftime("%Y-%m-%d")]
+    return earlier[-1] if earlier else dates[-1]
 
-    hours = ",".join(str(h) for h in cfg.get("heartbeat_hours", []))
-    ignore = json.dumps(cfg.get("ignore", {}), ensure_ascii=False, indent=1)
+
+ADMIN_CSS = """
+*{box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#eef1f5;color:#1f2733;margin:0}
+.top{background:#0f172a;color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
+.top h1{font-size:16px;margin:0;font-weight:600}
+.top a{color:#9db4d0;text-decoration:none;font-size:13px}
+.wrap{max-width:1080px;margin:0 auto;padding:22px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
+.card{background:#fff;border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04)}
+.card .k{font-size:12px;color:#8794a8;margin-bottom:6px}
+.card .v{font-size:26px;font-weight:700;line-height:1.1}
+.card .s{font-size:12px;color:#8794a8;margin-top:4px}
+.card .v small{font-size:13px;font-weight:400;color:#8794a8}
+section{background:#fff;border-radius:12px;padding:6px 20px 18px;margin-bottom:20px;box-shadow:0 1px 3px rgba(16,24,40,.06)}
+h2{font-size:14px;margin:16px 0 10px;color:#334155;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #eef1f5}
+th{color:#8794a8;font-weight:600}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#eef4fd;color:#2563eb;margin:2px 4px 2px 0;font-family:ui-monospace,Menlo,monospace}
+.tag.point{background:#fef3e8;color:#c2720b}
+label.f{display:block;font-size:12px;color:#8794a8;margin:12px 0 4px}
+input,textarea,select{width:100%;padding:8px 10px;border:1px solid #d5dbe3;border-radius:8px;font-size:14px;background:#fff}
+textarea{font-family:ui-monospace,Menlo,monospace;font-size:13px}
+.row{display:flex;gap:14px}.row>div{flex:1}
+button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer}
+button:hover{background:#1d4ed8}
+.ok{background:#e8f7ee;color:#1a8f43;border-radius:8px;padding:8px 12px;font-size:13px;margin:10px 0}
+.muted{color:#8794a8;font-size:13px}
+"""
+
+
+def _shell(inner, request):
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>管理后台</title>
+<style>{ADMIN_CSS}</style></head><body>
+<div class="top"><h1>房源监控 · 管理后台</h1><a href="{ADMIN_PATH}/logout">退出登录</a></div>
+<div class="wrap">{inner}</div></body></html>"""
+
+
+def render_login(err=""):
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>管理登录</title><style>{ADMIN_CSS}</style>
+</head><body><div style="max-width:360px;margin:80px auto;background:#fff;padding:26px;border-radius:14px;box-shadow:0 6px 24px rgba(16,24,40,.1)">
+<h1 style="font-size:17px;margin:0 0 16px">房源监控 · 管理后台</h1>
+{('<div style="color:#dc2626;font-size:13px;margin-bottom:10px">'+err+'</div>') if err else ''}
+<form method="post" action="{ADMIN_PATH}/login">
+<label class="f">管理密码</label><input type="password" name="pw" autofocus>
+<p><button style="width:100%;margin-top:16px">登录</button></p></form></div></body></html>"""
+
+
+def render_dashboard(request, msg=""):
+    cfg = cfgmod.load()
+    total, today, uniq, ips = visit_stats()
+    sb = read_usage(USAGE_SB)
+    pd = read_usage(USAGE_PD)
+    td = _now().strftime("%Y-%m-%d")
+    sb_t = sb.get(td, {})
+    pd_t = pd.get(td, {})
+    times = schedule_times(cfg)
+    days = sorted(set(list(sb.keys()) + list(pd.keys())), reverse=True)[:7]
+
+    ip_rows = "".join(f"<tr><td>{ip}</td><td>{n}</td></tr>" for ip, n in ips[:20]) or '<tr><td colspan="2" class="muted">暂无</td></tr>'
+
+    def usage_rows(data):
+        rows = ""
+        for d in days:
+            e = data.get(d, {})
+            rows += f"<tr><td>{d}</td><td>{e.get('req',0)}</td><td>{e.get('rec',0)}</td></tr>"
+        return rows or '<tr><td colspan="3" class="muted">暂无</td></tr>'
+
+    time_tags = "".join(f'<span class="tag point">{t}</span>' for t in times)
+    hb = ",".join(str(h) for h in cfg.get("heartbeat_hours", []))
+    extra = ",".join(str(h) for h in cfg.get("sched_extra_hours", []))
     keywords = ",".join(cfg.get("keywords", []))
-    return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>管理配置</title>
-<style>body{{font-family:-apple-system,"PingFang SC",sans-serif;background:#f5f6f8;margin:0}}
-.wrap{{max-width:640px;margin:24px auto;background:#fff;padding:22px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
-label{{display:block;font-size:13px;color:#555;margin:12px 0 4px}}
-input,textarea{{width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px}}
-button{{padding:9px 16px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;margin-top:16px}}
-.ok{{color:#1a8f43;margin:8px 0}}</style></head><body><div class="wrap">
-<h2>监控 / 推送配置</h2>
-<p style="color:#888;font-size:13px;margin:0 0 10px">报表访问：累计 <b>{vtotal}</b> 次 ｜ 今日 <b>{vtoday}</b> 次<br>{usage}</p>{('<div class=ok>'+msg+'</div>') if msg else ''}
-<form method=post action="{ADMIN_PATH}/save">
-<label>企业微信 Webhook</label><input name=wecom_webhook value="{cfg.get('wecom_webhook','')}">
-<label>Server酱 SendKey</label><input name=serverchan_key value="{cfg.get('serverchan_key','')}">
-<label>关键字（逗号分隔）</label><input name=keywords value="{keywords}">
-<label>忽略名单（JSON：项目ID→名称）</label><textarea name=ignore rows=4>{ignore}</textarea>
-<label>监控区 ID / 名称</label>
-<div style="display:flex;gap:8px"><input name=district_id value="{cfg.get('district_id','')}"><input name=district_name value="{cfg.get('district_name','')}"></div>
-<label>心跳小时（逗号分隔，24小时制）</label><input name=heartbeat_hours value="{hours}">
-<label>夜间静默起止（小时）</label>
-<div style="display:flex;gap:8px"><input name=quiet_start value="{cfg.get('quiet_start',0)}"><input name=quiet_end value="{cfg.get('quiet_end',8)}"></div>
-<label>报表默认基线（几天前）</label><input name=default_base_days value="{cfg.get('default_base_days',1)}">
-<div><button>保存</button> <a href="{ADMIN_PATH}/logout" style="margin-left:12px;font-size:13px">退出</a></div>
-</form></div></body></html>""")
+    ignore = json.dumps(cfg.get("ignore", {}), ensure_ascii=False, indent=1)
+
+    inner = f"""
+<div class="grid">
+  <div class="card"><div class="k">报表今日访问</div><div class="v">{today}</div><div class="s">累计 {total} 次</div></div>
+  <div class="card"><div class="k">今日独立 IP</div><div class="v">{uniq}</div></div>
+  <div class="card"><div class="k">随申办 今日调用</div><div class="v">{sb_t.get('req',0)}<small> 请求</small></div><div class="s">{sb_t.get('rec',0)} 条记录</div></div>
+  <div class="card"><div class="k">明珠在线 今日调用</div><div class="v">{pd_t.get('req',0)}<small> 请求</small></div><div class="s">{pd_t.get('rec',0)} 条记录</div></div>
+  <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">08:00–19:00 每20分 + 夜间整点</div></div>
+</div>
+
+<section>
+<h2>访问统计 · 今日 IP</h2>
+<table><thead><tr><th>IP</th><th>访问次数</th></tr></thead><tbody>{ip_rows}</tbody></table>
+</section>
+
+<section>
+<h2>接口用量（近 7 天）</h2>
+<div class="row">
+<div><div class="muted" style="margin:8px 0 4px">随申办</div>
+<table><thead><tr><th>日期</th><th>请求</th><th>记录</th></tr></thead><tbody>{usage_rows(sb)}</tbody></table></div>
+<div><div class="muted" style="margin:8px 0 4px">明珠在线</div>
+<table><thead><tr><th>日期</th><th>请求</th><th>记录</th></tr></thead><tbody>{usage_rows(pd)}</tbody></table></div>
+</div>
+</section>
+
+<section>
+<h2>查询策略 · 今日点位（{len(times)} 次）</h2>
+<div style="margin:6px 0 14px">{time_tags}</div>
+<form method="post" action="{ADMIN_PATH}/save">
+<div class="row">
+  <div><label class="f">每20分钟 起（时）</label><input name="sched_start" value="{cfg.get('sched_start',8)}"></div>
+  <div><label class="f">每20分钟 止（时，整点停）</label><input name="sched_end" value="{cfg.get('sched_end',19)}"></div>
+  <div><label class="f">额外整点（逗号）</label><input name="sched_extra_hours" value="{extra}"></div>
+</div>
+<div class="row">
+  <div><label class="f">心跳小时（逗号，24时制）</label><input name="heartbeat_hours" value="{hb}"></div>
+  <div><label class="f">夜间静默起（时）</label><input name="quiet_start" value="{cfg.get('quiet_start',0)}"></div>
+  <div><label class="f">夜间静默止（时）</label><input name="quiet_end" value="{cfg.get('quiet_end',8)}"></div>
+</div>
+<div class="row">
+  <div><label class="f">报表默认基线（几天前）</label><input name="default_base_days" value="{cfg.get('default_base_days',1)}"></div>
+  <div><label class="f">监控区 ID（空=全市）</label><input name="district_id" value="{cfg.get('district_id','')}"></div>
+  <div><label class="f">监控区名称</label><input name="district_name" value="{cfg.get('district_name','全市')}"></div>
+</div>
+
+<h2 style="margin-top:22px">推送 / 关键字</h2>
+<div class="row">
+  <div><label class="f">企业微信 Webhook</label><input name="wecom_webhook" value="{cfg.get('wecom_webhook','')}"></div>
+  <div><label class="f">Server酱 SendKey</label><input name="serverchan_key" value="{cfg.get('serverchan_key','')}"></div>
+</div>
+<label class="f">关键字（逗号分隔）</label><input name="keywords" value="{keywords}">
+<label class="f">忽略名单（JSON：项目ID→名称）</label><textarea name="ignore" rows="4">{ignore}</textarea>
+{(f'<div class="ok">{msg}</div>') if msg else ''}
+<p><button>保存配置</button> <span class="muted">保存后监控下一轮生效（≤按策略点位）</span></p>
+</form>
+</section>
+"""
+    return _shell(inner, request)
 
 
 @app.get(ADMIN_PATH, response_class=HTMLResponse)
 def admin(request: Request):
-    return _admin_page(request)
+    if not request.session.get("admin"):
+        return HTMLResponse(render_login())
+    return HTMLResponse(render_dashboard(request))
 
 
 @app.post(ADMIN_PATH + "/login")
@@ -145,7 +266,7 @@ def admin_login(request: Request, pw: str = Form("")):
     if pw == ADMIN_PW:
         request.session["admin"] = True
         return RedirectResponse(ADMIN_PATH, status_code=303)
-    return _admin_page(request, err="密码错误")
+    return HTMLResponse(render_login("密码错误"))
 
 
 @app.get(ADMIN_PATH + "/logout")
@@ -156,30 +277,37 @@ def admin_logout(request: Request):
 
 @app.post(ADMIN_PATH + "/save")
 def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: str = Form(""),
-               keywords: str = Form(""), ignore: str = Form("{}"), district_id: str = Form("14"),
-               district_name: str = Form("浦东新区"), heartbeat_hours: str = Form(""),
-               quiet_start: str = Form("0"), quiet_end: str = Form("8"), default_base_days: str = Form("1")):
+               keywords: str = Form(""), ignore: str = Form("{}"), district_id: str = Form(""),
+               district_name: str = Form("全市"), heartbeat_hours: str = Form(""),
+               quiet_start: str = Form("0"), quiet_end: str = Form("8"), default_base_days: str = Form("1"),
+               sched_start: str = Form("8"), sched_end: str = Form("19"), sched_extra_hours: str = Form("20,21,22,0")):
     if not request.session.get("admin"):
         return RedirectResponse(ADMIN_PATH, status_code=303)
+
+    def ints(s, dflt):
+        try:
+            return [int(x) for x in s.split(",") if x.strip() != ""]
+        except Exception:
+            return dflt
+
     try:
         ig = json.loads(ignore) if ignore.strip() else {}
     except Exception:
         ig = {}
-    try:
-        hh = [int(x) for x in heartbeat_hours.split(",") if x.strip() != ""]
-    except Exception:
-        hh = cfgmod.DEFAULTS["heartbeat_hours"]
     cfg = {
         "wecom_webhook": wecom_webhook.strip(),
         "serverchan_key": serverchan_key.strip(),
         "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
         "ignore": ig,
-        "district_id": district_id.strip() or "14",
-        "district_name": district_name.strip() or "浦东新区",
-        "heartbeat_hours": hh,
+        "district_id": district_id.strip(),
+        "district_name": district_name.strip() or "全市",
+        "heartbeat_hours": ints(heartbeat_hours, cfgmod.DEFAULTS["heartbeat_hours"]),
         "quiet_start": int(quiet_start or 0),
         "quiet_end": int(quiet_end or 8),
         "default_base_days": int(default_base_days or 1),
+        "sched_start": int(sched_start or 8),
+        "sched_end": int(sched_end or 19),
+        "sched_extra_hours": ints(sched_extra_hours, cfgmod.DEFAULTS["sched_extra_hours"]),
     }
     cfgmod.save(cfg)
-    return _admin_page(request, msg="已保存，监控将在下一轮（≤5 分钟）生效")
+    return HTMLResponse(render_dashboard(request, msg="已保存，监控将在下一轮点位生效"))
