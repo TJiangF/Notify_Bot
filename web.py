@@ -133,9 +133,12 @@ def schedule_times(cfg):
     out = []
     st = int(cfg.get("sched_start", 8))
     en = int(cfg.get("sched_end", 19))
+    step = int(cfg.get("sched_step", 10)) or 10
     for h in range(st, en):
-        for m in (0, 20, 40):
+        m = 0
+        while m < 60:
             out.append(f"{h:02d}:{m:02d}")
+            m += step
     out.append(f"{en:02d}:00")
     for h in sorted(set(int(x) for x in cfg.get("sched_extra_hours", []))):
         out.append(f"{h:02d}:00")
@@ -257,7 +260,7 @@ def render_dashboard(request, msg=""):
   <div class="card"><div class="k">今日独立 IP</div><div class="v">{uniq}</div></div>
   <div class="card"><div class="k">随申办 今日调用</div><div class="v">{sb_t.get('req',0)}<small> 请求</small></div><div class="s">{sb_t.get('rec',0)} 条记录</div></div>
   <div class="card"><div class="k">明珠在线 今日调用</div><div class="v">{pd_t.get('req',0)}<small> 请求</small></div><div class="s">{pd_t.get('rec',0)} 条记录</div></div>
-  <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">08:00–19:00 每20分 + 夜间整点</div></div>
+  <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">08:00–19:00 每 {cfg.get('sched_step',10)} 分钟 + 夜间整点</div></div>
 </div>
 
 <section>
@@ -280,9 +283,10 @@ def render_dashboard(request, msg=""):
 <div style="margin:6px 0 14px">{time_tags}</div>
 <form method="post" action="{ADMIN_PATH}/save">
 <div class="row">
-  <div><label class="f">每20分钟 起（时）</label><input name="sched_start" value="{cfg.get('sched_start',8)}"></div>
-  <div><label class="f">每20分钟 止（时，整点停）</label><input name="sched_end" value="{cfg.get('sched_end',19)}"></div>
-  <div><label class="f">额外整点（逗号）</label><input name="sched_extra_hours" value="{extra}"></div>
+  <div><label class="f">起始小时</label><input name="sched_start" value="{cfg.get('sched_start',8)}"></div>
+  <div><label class="f">结束小时（整点停）</label><input name="sched_end" value="{cfg.get('sched_end',19)}"></div>
+  <div><label class="f">间隔(分钟)</label><input name="sched_step" value="{cfg.get('sched_step',10)}"></div>
+  <div><label class="f">额外整点(逗号)</label><input name="sched_extra_hours" value="{extra}"></div>
 </div>
 <div class="row">
   <div><label class="f">心跳小时（逗号，24时制）</label><input name="heartbeat_hours" value="{hb}"></div>
@@ -336,7 +340,8 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
                keywords: str = Form(""), ignore: str = Form("{}"), district_id: str = Form(""),
                district_name: str = Form("全市"), heartbeat_hours: str = Form(""),
                quiet_start: str = Form("0"), quiet_end: str = Form("8"), default_base_days: str = Form("1"),
-               sched_start: str = Form("8"), sched_end: str = Form("19"), sched_extra_hours: str = Form("20,21,22,0")):
+               sched_start: str = Form("8"), sched_end: str = Form("19"), sched_extra_hours: str = Form("20,21,22,0"),
+               sched_step: str = Form("10")):
     if not request.session.get("admin"):
         return RedirectResponse(ADMIN_PATH, status_code=303)
 
@@ -363,6 +368,7 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
         "default_base_days": int(default_base_days or 1),
         "sched_start": int(sched_start or 8),
         "sched_end": int(sched_end or 19),
+        "sched_step": int(sched_step or 10),
         "sched_extra_hours": ints(sched_extra_hours, cfgmod.DEFAULTS["sched_extra_hours"]),
     }
     cfgmod.save(cfg)

@@ -89,14 +89,9 @@ def dtag(v):
     return "0"
 
 
-def _range_box(pfx, rmax):
-    rmax = int(rmax) if rmax else 20000
+def _range_box(pfx, rmax=0):
     return (
-        '<span class="rangebox"><span class="rangedrag">'
-        f'<span class="rbar"><i id="{pfx}_rfill"></i></span>'
-        f'<input type="range" id="{pfx}_rsmin" min="0" max="{rmax}" step="50" value="0">'
-        f'<input type="range" id="{pfx}_rsmax" min="0" max="{rmax}" step="50" value="{rmax}">'
-        '</span>'
+        '<span class="rangebox">'
         f'<input type="number" id="{pfx}_fmin" class="rn" placeholder="最低">'
         '<span>-</span>'
         f'<input type="number" id="{pfx}_fmax" class="rn" placeholder="最高">'
@@ -270,10 +265,14 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
         rmaxp = int((hmaxp // 1000 + 1) * 1000) if hmaxp else 20000
         fy_opts = "".join(f'<label><input type="checkbox" class="pd_h" value="{esc(d)}"> {esc(d)}</label>'
                           for d in ["一室", "二室", "三室"])
+        metro_chk = "".join(f'<label><input type="checkbox" class="pd_m" value="{esc(m)}"> {esc(m)}</label>' for m in metros)
+        status_chk = "".join(f'<label><input type="checkbox" class="pd_s" value="{esc(s)}"> {esc(s)}</label>' for s in statuses)
         pd_filter = (
             '<label>租金：' + _range_box("pd", rmaxp) + '</label>'
-            f'<label>地铁：<select id="pd_fmetro"><option value="">全部</option>{metro_opts}</select></label>'
-            f'<label>状态：<select id="pd_fstatus"><option value="">全部</option>{status_opts}</select></label>'
+            '<details class="ms"><summary id="pd_msum">地铁：全部</summary>'
+            f'<div class="ms-list">{metro_chk}</div></details>'
+            '<details class="ms"><summary id="pd_ssum">状态：全部</summary>'
+            f'<div class="ms-list">{status_chk}</div></details>'
             '<details class="ms"><summary id="pd_hsum">户型：全部</summary>'
             f'<div class="ms-list">{fy_opts}</div></details>'
             '<button type="button" onclick="applyPd()">筛选</button>'
@@ -592,10 +591,7 @@ function resetSb(){{
 function resetPd(){{
   var a=document.getElementById('pd_fmin'); if(a) a.value='';
   var b=document.getElementById('pd_fmax'); if(b) b.value='';
-  document.querySelectorAll('.pd_h').forEach(function(c){{ c.checked=false; }});
-  var m=document.getElementById('pd_fmetro'); if(m) m.value='';
-  var s=document.getElementById('pd_fstatus'); if(s) s.value='';
-  if(window.__pdRange) window.__pdRange();
+  document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.checked=false; }});
   filterPd();
 }}
 function bindRange(pfx){{
@@ -633,8 +629,12 @@ function bindRange(pfx){{
 function filterPd(){{
   var mn=parseFloat((document.getElementById('pd_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
   var mx=parseFloat((document.getElementById('pd_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
-  var mt=(document.getElementById('pd_fmetro')||{{}}).value||'';
-  var st=(document.getElementById('pd_fstatus')||{{}}).value||'';
+  var mset={{}}; document.querySelectorAll('.pd_m:checked').forEach(function(c){{ mset[c.value]=1; }});
+  var mkeys=Object.keys(mset); var mkn=mkeys.length;
+  var msum=document.getElementById('pd_msum'); if(msum) msum.textContent='地铁：'+(mkn?('已选 '+mkn+' 个'):'全部');
+  var sset={{}}; document.querySelectorAll('.pd_s:checked').forEach(function(c){{ sset[c.value]=1; }});
+  var skeys=Object.keys(sset); var skn=skeys.length;
+  var ssum=document.getElementById('pd_ssum'); if(ssum) ssum.textContent='状态：'+(skn?('已选 '+skn+' 个'):'全部');
   var hset={{}}; document.querySelectorAll('.pd_h:checked').forEach(function(c){{ hset[c.value]=1; }});
   var hkeys=Object.keys(hset); var hn=hkeys.length;
   var hsum=document.getElementById('pd_hsum'); if(hsum) hsum.textContent='户型：'+(hn?('已选 '+hn+' 个'):'全部');
@@ -642,8 +642,10 @@ function filterPd(){{
     var pmin=parseFloat(li.getAttribute('data-pmin'))||0;
     var pmax=parseFloat(li.getAttribute('data-pmax'))||0;
     var okP=(pmax>=mn)&&(pmin<=mx);
-    var okM=!mt||(li.getAttribute('data-metro')||'').indexOf(mt)>=0;
-    var okS=!st||li.getAttribute('data-status')===st;
+    var mstr=li.getAttribute('data-metro')||'';
+    var okM=!mkn||mkeys.some(function(t){{ return mstr.indexOf(t)>=0; }});
+    var stv=li.getAttribute('data-status')||'';
+    var okS=!skn||skeys.some(function(t){{ return stv===t; }});
     var fy=li.getAttribute('data-fy')||'';
     var okF=!hn||hkeys.some(function(t){{ return fy.indexOf(t)>=0; }});
     li.style.display=(okP&&okM&&okS&&okF)?'':'none';
@@ -856,12 +858,11 @@ document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('c
   var item=h.parentNode; item.classList.toggle('open');
   if(item.classList.contains('open')){{ var c=item.querySelector('.cmts'); if(c) loadComments(c); }}
 }}); }});
-document.querySelectorAll('.pd_h').forEach(function(c){{ c.addEventListener('change', filterPd); }});
-['pd_fmetro','pd_fstatus'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('change', filterPd); }});
-window.__pdRange=bindRange('pd');
+document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.addEventListener('change', filterPd); }});
+['pd_fmin','pd_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterPd); }});
 filterPd();
 document.querySelectorAll('.sb_t,.sb_h,.sb_d').forEach(function(c){{ c.addEventListener('change', filterSb); }});
-window.__sbRange=bindRange('sb');
+['sb_fmin','sb_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterSb); }});
 filterSb();
 </script>
 </body></html>"""
