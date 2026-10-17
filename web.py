@@ -14,7 +14,7 @@ import config as cfgmod  # noqa: E402
 ADMIN_PATH = os.environ.get("SSB_ADMIN_PATH", "/admin")
 ADMIN_PW = os.environ.get("SSB_ADMIN_PASSWORD", "change-me")
 SECRET = os.environ.get("SSB_WEB_SECRET", "please-change-this")
-AUTO_REFRESH = int(os.environ.get("SSB_REFRESH_SEC", "1800"))
+AUTO_REFRESH = int(os.environ.get("SSB_REFRESH_SEC", "3600"))
 BJ = timezone(timedelta(hours=8))
 DATA_DIR = os.path.join(BASE, "data")
 VISITS_FILE = os.path.join(DATA_DIR, "visits.json")

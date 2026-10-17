@@ -18,8 +18,8 @@ SERVERCHAN_KEY = os.environ.get("SERVERCHAN_SENDKEY", "")
 SERVERCHAN_HEARTBEAT = os.environ.get("SERVERCHAN_HEARTBEAT", "0").lower() in ("1", "true", "yes")
 
 COOKIE = os.environ.get("SSB_COOKIE", "")
-DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "14")
-DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "浦东新区")
+DISTRICT_ID = os.environ.get("SSB_DISTRICT_ID", "")
+DISTRICT_NAME = os.environ.get("SSB_DISTRICT_NAME", "全市")
 PD_COOKIE = os.environ.get("PD_COOKIE", "")
 PD_CSRF = os.environ.get("PD_CSRF", "")
 PD_USER = os.environ.get("PD_USER", "")
@@ -43,6 +43,7 @@ STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
+SUPPRESS_PUSH = False
 
 IGNORE = {
     "4594": "森兰星遇公寓(新展城店)",
@@ -353,6 +354,47 @@ def record_usage(nreq=0, nrec=0):
         pass
 
 
+REPORT_DIR = os.path.join(BASE_DIR, "data")
+
+
+def _map_ssb(items):
+    return [{"id": r.get("projectId"), "name": r.get("projectName"),
+             "district": r.get("districtName") or "未知", "online": r.get("onlineFlatNum") or 0,
+             "total": r.get("totalFlatNum") or 0, "rent_low": r.get("rentLow"), "rent_high": r.get("rentHigh"),
+             "addr": r.get("projectLocation"), "tel": r.get("projectTel"),
+             "house_type": r.get("houseTypeName"), "door_type": r.get("rentDoorTypeName"),
+             "supply_start": r.get("concentRateSupplyStartDay"), "supply_end": r.get("concentRateSupplyEndDay"),
+             "accept_start": r.get("concentRateAcceptStartDay"), "accept_end": r.get("concentRateAcceptEndDay"),
+             "intro": r.get("projectIntroduction")} for r in (items or [])]
+
+
+def _map_pd(items):
+    return [{"id": r.get("projectId"), "name": r.get("villageProjectName"), "district": "浦东新区",
+             "kzts": r.get("kzts") or 0, "status": r.get("projectStatusName"), "addr": r.get("LOCATION"),
+             "tel": r.get("lxdh"), "price": r.get("price_range"), "metro": r.get("metro_subway") or [],
+             "zone": r.get("zoneName"), "supply_date": r.get("supplyDate"), "release_time": r.get("releaseTime"),
+             "fylx": r.get("xmfyzts") or []} for r in (items or [])]
+
+
+def _map_notice(items):
+    return [{"id": r.get("noticeId"), "name": r.get("projectName"), "addr": r.get("projectAddress"),
+             "rent": r.get("planRentLevel"), "supply_date": r.get("planSupplyDate"), "tel": r.get("contact"),
+             "org": r.get("orgName"), "intro": r.get("introduction")} for r in (items or [])]
+
+
+def write_report(cur, pd, notice, daily=False):
+    try:
+        snap = {"date": now_bj().strftime("%Y-%m-%d"), "generated_at": now_bj().isoformat(timespec="seconds"),
+                "ssb": _map_ssb(cur), "pd": _map_pd(pd), "notice": _map_notice(notice)}
+        os.makedirs(REPORT_DIR, exist_ok=True)
+        json.dump(snap, open(os.path.join(REPORT_DIR, "current.json"), "w"), ensure_ascii=False)
+        if daily:
+            json.dump(snap, open(os.path.join(REPORT_DIR, snap["date"] + ".json"), "w"), ensure_ascii=False, indent=1)
+        print(f"已更新报表：随申办 {len(snap['ssb'])} / 明珠 {len(snap['pd'])} / 预告 {len(snap['notice'])}")
+    except Exception as e:
+        print("写报表失败：", repr(e))
+
+
 def in_quiet_hours():
     h = now_bj().hour
     return QUIET_START <= h < QUIET_END
@@ -386,6 +428,9 @@ def send_serverchan(text):
 
 
 def push(text, heartbeat=False):
+    if SUPPRESS_PUSH:
+        print("[静默-不推送] " + text.splitlines()[0][:60])
+        return
     sent = False
     if WEBHOOK:
         send_wecom(text)
@@ -597,41 +642,21 @@ def clear_err(state, key):
     return state.pop(key, None) is not None
 
 
-def run_once():
+def run_once(report=False):
+    global SUPPRESS_PUSH
     state = load_state()
+    bj = now_bj()
+    SUPPRESS_PUSH = in_quiet_hours() and not FORCE_HEARTBEAT
 
-    if in_quiet_hours() and not FORCE_HEARTBEAT:
-        try:
-            a = len(fetch_all())
-        except Exception as e:
-            a = f"失败({type(e).__name__})"
-        c = "-"
-        try:
-            c = len(fetch_notice())
-        except Exception as e:
-            c = f"失败({type(e).__name__})"
-        b = "-"
-        if PD_USER or PD_COOKIE:
-            try:
-                b = len(fetch_pd(state))
-            except Exception as e:
-                b = f"失败({type(e).__name__})"
-        print(f"夜间静默：已保活（随申办 {a} / 预告 {c} / 人才公寓 {b}），本次不推送")
-        return
-
-    recovered = False
-
-    cur = None
+    cur_all = None
     try:
-        cur = fetch_all()
+        cur_all = fetch_all()
     except RateLimitError as e:
         print("随申办限流：", e)
-        notify_err(state, ERR_SB,
-                   "⚠️ 随申办当日查询次数已用完（每日上限），将于次日 00:00 恢复；监控在此期间无法更新。")
+        notify_err(state, ERR_SB, "⚠️ 随申办当日查询次数已用完（每日上限），将于次日 00:00 恢复；监控在此期间无法更新。")
     except AuthError as e:
         print("随申办 Cookie 失效：", e)
-        notify_err(state, ERR_SB,
-                   "⚠️ 随申办登录信息已失效，请重新登录随申办抓取新的 Cookie 并更新 Secret「SSB_COOKIE」。")
+        notify_err(state, ERR_SB, "⚠️ 随申办登录信息已失效，请重新登录随申办抓取新的 Cookie 并更新 Secret「SSB_COOKIE」。")
     except Exception as e:
         print("随申办抓取失败：", repr(e))
         notify_err(state, ERR_SB, f"⚠️ 随申办获取数据失败：{type(e).__name__}: {e}")
@@ -642,36 +667,43 @@ def run_once():
         try:
             pd = fetch_pd(state)
         except PdAuthError as e:
-            print("人才公寓会话失效且自动登录失败：", e)
-            notify_err(state, ERR_PD,
-                       "⚠️ 浦东人才公寓自动登录失败（会话过期且验证码未识别），请检查账号密码 Secret「PD_USER」「PD_PASS」。")
+            print("明珠在线会话失效且自动登录失败：", e)
+            notify_err(state, ERR_PD, "⚠️ 明珠在线自动登录失败（会话过期且验证码未识别），请检查账号密码 Secret「PD_USER」「PD_PASS」。")
         except Exception as e:
-            print("人才公寓抓取失败：", repr(e))
-            notify_err(state, ERR_PD, f"⚠️ 浦东人才公寓获取数据失败：{type(e).__name__}: {e}")
+            print("明珠在线抓取失败：", repr(e))
+            notify_err(state, ERR_PD, f"⚠️ 明珠在线获取数据失败：{type(e).__name__}: {e}")
 
     notice = None
-    if cur is not None:
+    if cur_all is not None:
         try:
             notice = fetch_notice()
         except Exception as e:
             print("预告抓取失败：", repr(e))
 
-    if cur is not None and clear_err(state, ERR_SB):
+    recovered = False
+    if cur_all is not None and clear_err(state, ERR_SB):
         recovered = True
     if pd_configured and pd is not None and clear_err(state, ERR_PD):
         recovered = True
     if recovered:
         push("✅ 监控已恢复正常。")
 
+    kw_cur = [x for x in cur_all if is_keyword(x.get("projectName"))] if cur_all is not None else None
+
+    scope = f"kw:{DISTRICT_ID}"
+    if state.get(SCOPE_KEY) != scope:
+        for k in list(state.keys()):
+            if not str(k).startswith("__"):
+                del state[k]
+
     sb_baseline = not project_items(state)
     pd_baseline = not state.get(PD_PROJECTS_KEY)
     notice_baseline = not state.get(NOTICE_KEY)
 
     if FORCE_HEARTBEAT:
-        lines = []
-        if cur:
-            lines += ["【房源监控 · 测试心跳】", f"时间：{now_bj().strftime('%Y-%m-%d %H:%M')}"]
-            lines += [section(f"随申办（{DISTRICT_NAME}）", sb_heartbeat_lines(cur))]
+        lines = ["【房源监控 · 测试心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}"]
+        if cur_all:
+            lines += [section(f"随申办（{DISTRICT_NAME}·关键字）", sb_heartbeat_lines(kw_cur or []))]
             if notice:
                 lines += [section("随申办·供应预告", notice_heartbeat_lines(notice))]
             if pd:
@@ -679,23 +711,23 @@ def run_once():
         else:
             lines = ["【房源监控 · 测试心跳】无数据（可能登录失效）"]
         push("\n".join(lines))
-        if cur:
-            update_state(state, cur)
+        if kw_cur is not None:
+            update_state(state, kw_cur)
         if notice is not None:
             notice_update(state, notice)
         if pd is not None:
             pd_update(state, pd)
-        state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
+        state[SCOPE_KEY] = scope
         save_state(state)
         print("已按测试开关强制发送心跳")
         return
 
     change_sections = ""
-    if cur is not None:
+    if kw_cur is not None:
         if not sb_baseline:
-            sb_lines = sb_change_lines(*diff(state, cur))
-            change_sections += section(f"随申办（{DISTRICT_NAME}）", sb_lines)
-        update_state(state, cur)
+            sb_lines = sb_change_lines(*diff(state, kw_cur))
+            change_sections += section(f"随申办（{DISTRICT_NAME}·关键字）", sb_lines)
+        update_state(state, kw_cur)
 
     if notice is not None:
         if not notice_baseline:
@@ -716,32 +748,52 @@ def run_once():
     elif sb_baseline and pd_baseline:
         print("首次运行，建立基线")
 
-    bj = now_bj()
     stamp = bj.strftime("%Y-%m-%d %H")
     if bj.hour in HEARTBEAT_HOURS and state.get(HEARTBEAT_KEY) != stamp:
         lines = ["【房源监控 · 定时心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}"]
-        if cur:
-            lines += [section(f"随申办（{DISTRICT_NAME}）", sb_heartbeat_lines(cur))]
+        if kw_cur:
+            lines += [section(f"随申办（{DISTRICT_NAME}·关键字）", sb_heartbeat_lines(kw_cur))]
         if notice:
             lines += [section("随申办·供应预告", notice_heartbeat_lines(notice))]
         if pd:
             lines += [section("明珠在线", pd_heartbeat_lines(pd))]
-        if cur or pd or notice:
+        if kw_cur or pd or notice:
             push("\n".join(lines), heartbeat=True)
             state[HEARTBEAT_KEY] = stamp
             print("整点心跳已推送:", stamp)
 
-    state[SCOPE_KEY] = f"district:{DISTRICT_ID}"
+    state[SCOPE_KEY] = scope
     save_state(state)
+
+    if report:
+        write_report(cur_all, pd, notice, daily=(bj.hour == 12))
+
+
+SCHED20_HOURS = set(range(8, 20))
+SCHED_POINT_HOURS = {20, 21, 22, 0}
+
+
+def is_scheduled(bj):
+    if bj.hour in SCHED20_HOURS and bj.minute in (0, 20, 40):
+        return True
+    if bj.hour in SCHED_POINT_HOURS and bj.minute == 0:
+        return True
+    return False
 
 
 def run_loop():
+    last = None
     while True:
         try:
-            run_once()
-        finally:
-            print(time.strftime("%Y-%m-%d %H:%M:%S"), "本轮检查完成", flush=True)
-        time.sleep(int(os.environ.get("SSB_INTERVAL", "300")))
+            bj = now_bj()
+            key = bj.strftime("%Y-%m-%d %H:%M")
+            if key != last and is_scheduled(bj):
+                last = key
+                run_once(report=(bj.minute == 0))
+                print(bj.strftime("%Y-%m-%d %H:%M:%S"), "本轮完成", flush=True)
+        except Exception as e:
+            print("循环异常：", repr(e))
+        time.sleep(20)
 
 
 def main():
