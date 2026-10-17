@@ -52,6 +52,13 @@ def map_ssb(ssb):
         "rent_high": r.get("rentHigh"),
         "addr": r.get("projectLocation"),
         "tel": r.get("projectTel"),
+        "house_type": r.get("houseTypeName"),
+        "door_type": r.get("rentDoorTypeName"),
+        "supply_start": r.get("concentRateSupplyStartDay"),
+        "supply_end": r.get("concentRateSupplyEndDay"),
+        "accept_start": r.get("concentRateAcceptStartDay"),
+        "accept_end": r.get("concentRateAcceptEndDay"),
+        "intro": r.get("projectIntroduction"),
     } for r in (ssb or [])]
 
 

@@ -179,12 +179,51 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 
     def all_projects(latest):
         ssb = latest["ssb"]
-        ssb_d = sorted({x["district"] for x in ssb})
-        ssb_filter = "".join(f'<label><input type="checkbox" class="ga" value="{esc(d)}"> {esc(d)}</label>' for d in ssb_d)
-        ssb_items = "".join(
-            f'<li data-d="{esc(x["district"])}"><b>{esc(x["name"])}</b>（{esc(x["district"])}）'
-            f'　在线 {x["online"]} 套　{esc(x.get("addr"))}　电话 {esc(x.get("tel"))}</li>'
-            for x in sorted(ssb, key=lambda a: (a["district"], -(a["online"] or 0))))
+        htypes = sorted({x.get("house_type") for x in ssb if x.get("house_type")})
+        hb_opts = "".join(f'<option value="{esc(h)}">{esc(h)}</option>' for h in htypes)
+        door_opts = "".join(f'<option value="{esc(d)}">{esc(d)}</option>' for d in ["单间", "一居室", "二居室", "三居室", "多居室"])
+        districts = sorted({x.get("district") for x in ssb if x.get("district")})
+        dchecks = "".join(f'<label><input type="checkbox" class="sb_d" value="{esc(d)}"> {esc(d)}</label>' for d in districts)
+        ssb_filter = (
+            '<label>租金：<input id="sb_fmin" type="number" placeholder="最低" style="width:72px">'
+            ' - <input id="sb_fmax" type="number" placeholder="最高" style="width:72px"></label>'
+            f'<label>类型：<select id="sb_ftype"><option value="">全部</option>{hb_opts}</select></label>'
+            f'<label>户型：<select id="sb_fdoor"><option value="">全部</option>{door_opts}</select></label>'
+            '<details class="ms"><summary id="sb_dsum">行政区：全部</summary>'
+            f'<div class="ms-list">{dchecks}</div></details>'
+            '<button type="button" onclick="filterSb()">筛选</button>'
+        )
+
+        def dday(v):
+            return str(v).split(" ")[0] if v else ""
+
+        sitems = []
+        for x in sorted(ssb, key=lambda a: -(a["online"] or 0)):
+            lo, hi = x.get("rent_low"), x.get("rent_high")
+            nums = [float(n) for n in (lo, hi) if isinstance(n, (int, float))]
+            pmin = min(nums) if nums else 0
+            pmax = max(nums) if nums else 0
+            price = f"{lo} ~ {hi} 元" if (lo is not None or hi is not None) else "—"
+            htype = x.get("house_type") or ""
+            dts = [t.strip() for t in (x.get("door_type") or "").replace("，", "、").split("、") if t.strip()]
+            door_key = "、".join(dts)
+            district = x.get("district") or ""
+            supply = " ~ ".join([d for d in [dday(x.get("supply_start")), dday(x.get("supply_end"))] if d]) or "—"
+            accept = " ~ ".join([d for d in [dday(x.get("accept_start")), dday(x.get("accept_end"))] if d]) or "—"
+            badge = f'<span class="badge s-blue">{esc(htype)}</span>' if htype else ""
+            sitems.append(
+                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-type="{esc(htype)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
+                f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
+                f'<span class="pdkz">在线 {x["online"]} 套</span></span>'
+                f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
+                f'<div class="pddetail"><div class="pdgrid">'
+                f'<div class="pdcell"><b>租金</b>{esc(price)}</div>'
+                f'<div class="pdcell"><b>户型</b>{esc("、".join(dts)) or "—"}</div>'
+                f'<div class="pdcell"><b>供应</b>{esc(supply)}</div>'
+                f'<div class="pdcell"><b>受理</b>{esc(accept)}</div>'
+                f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
+                f'</div></div></li>')
+        ssb_items = "".join(sitems)
         pd = latest["pd"]
         metros = sorted({m.split("/")[0].strip() for x in pd for m in (x.get("metro") or []) if m})
         statuses = sorted({x.get("status") for x in pd if x.get("status")})
@@ -304,7 +343,13 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .pdname{{font-weight:600}}
  .pdkz{{color:#1a8f43;font-weight:600;margin-left:8px;font-size:12px}}
  .badge{{font-size:11px;padding:1px 6px;border-radius:8px;margin-left:6px;color:#fff;white-space:nowrap}}
- .s-yy{{background:#1a8f43}} .s-dg{{background:#e08a00}} .s-zj{{background:#888}} .s-ot{{background:#999}}
+ .s-yy{{background:#1a8f43}} .s-dg{{background:#e08a00}} .s-zj{{background:#888}} .s-ot{{background:#999}} .s-blue{{background:#5b9bd5}}
+ .ms{{position:relative;display:inline-block}}
+ .ms>summary{{cursor:pointer;font-size:13px;list-style:none;padding:4px 10px;border:1px solid #ccc;border-radius:6px;background:#fff}}
+ .ms>summary::-webkit-details-marker{{display:none}}
+ .ms[open]>summary{{border-color:#2563eb}}
+ .ms .ms-list{{position:absolute;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px 10px;max-height:260px;overflow:auto;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:160px}}
+ .ms .ms-list label{{display:block;white-space:nowrap;font-size:13px;padding:3px 0;cursor:pointer}}
  .pdright{{color:#888;text-align:right;margin-left:auto;font-size:12px}}
  .pddetail{{display:none;padding:4px 4px 14px}}
  .pditem.open .pddetail{{display:block}}
@@ -355,8 +400,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <div class="allbox">
 <h3>随申办</h3>
 <div class="filters">{ssb_filter}</div>
-<div class="emptyhint">勾选上方行政区以显示对应房源</div>
-<ul class="alllist">{ssb_items}</ul>
+<ul class="pdlist" id="sblist">{ssb_items}</ul>
 </div>
 <div class="allbox">
 <h3>明珠在线</h3>
@@ -371,18 +415,23 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <tbody>{trend_table}</tbody></table>
 </div>
 <script>
-function applyAll(){{
-  document.querySelectorAll('.allbox').forEach(function(box){{
-    var checked = new Set([].slice.call(box.querySelectorAll('input.ga:checked')).map(function(x){{return x.value;}}));
-    box.querySelectorAll('li[data-d]').forEach(function(li){{
-      li.style.display = checked.has(li.getAttribute('data-d')) ? '' : 'none';
-    }});
-    var hint = box.querySelector('.emptyhint');
-    if (hint) hint.style.display = checked.size > 0 ? 'none' : '';
+function filterSb(){{
+  var mn=parseFloat((document.getElementById('sb_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
+  var mx=parseFloat((document.getElementById('sb_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
+  var ty=(document.getElementById('sb_ftype')||{{}}).value||'';
+  var dr=(document.getElementById('sb_fdoor')||{{}}).value||'';
+  var dset={{}}; document.querySelectorAll('.sb_d:checked').forEach(function(c){{ dset[c.value]=1; }});
+  var n=Object.keys(dset).length;
+  var sum=document.getElementById('sb_dsum'); if(sum) sum.textContent='行政区：'+(n?('已选 '+n+' 个'):'全部');
+  document.querySelectorAll('#sblist .pditem').forEach(function(li){{
+    var pmin=parseFloat(li.getAttribute('data-pmin'))||0, pmax=parseFloat(li.getAttribute('data-pmax'))||0;
+    var okP=(pmax>=mn)&&(pmin<=mx);
+    var okT=!ty||li.getAttribute('data-type')===ty;
+    var okD=!dr||(li.getAttribute('data-door')||'').indexOf(dr)>=0;
+    var okA=!n||dset[li.getAttribute('data-d')];
+    li.style.display=(okP&&okT&&okD&&okA)?'':'none';
   }});
 }}
-document.querySelectorAll('input.ga').forEach(function(el){{ el.addEventListener('change', applyAll); }});
-applyAll();
 function filterPd(){{
   var mn=parseFloat((document.getElementById('pd_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
   var mx=parseFloat((document.getElementById('pd_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
@@ -399,9 +448,12 @@ function filterPd(){{
     li.style.display=(okP&&okM&&okS&&okF)?'':'none';
   }});
 }}
-document.querySelectorAll('#pdlist .pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
+document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
 ['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
 filterPd();
+['sb_fmin','sb_fmax','sb_ftype','sb_fdoor'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterSb); el.addEventListener('input', filterSb); }} }});
+document.querySelectorAll('.sb_d').forEach(function(c){{ c.addEventListener('change', filterSb); }});
+filterSb();
 </script>
 </body></html>"""
 
