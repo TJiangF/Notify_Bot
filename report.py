@@ -399,6 +399,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .cmptab .c-x{{width:36px;text-align:center;padding:6px}}
  .cmptab .c-name{{font-weight:600;max-width:220px}}
  .cmptab .c-intro{{max-width:340px}}
+ .cmptab .c-intro.expanded{{white-space:normal;max-width:560px}}
+ .c-expand{{color:#2563eb;cursor:pointer;font-size:11px;margin-left:4px;white-space:nowrap}}
  .cmp-x{{width:22px;height:22px;border-radius:50%;border:0;background:#f43f5e;color:#fff;cursor:pointer;line-height:1;font-size:14px;padding:0}}
  .cmp-x:hover{{background:#e11d48}}
  .cmp-src{{font-size:10px;color:#fff;background:#9aa4b2;border-radius:5px;padding:1px 6px;margin-left:6px;white-space:nowrap}}
@@ -609,9 +611,28 @@ document.addEventListener('click', function(e){{
 var compareList=[];
 try{{ var _c=localStorage.getItem('cmp_list'); if(_c) compareList=JSON.parse(_c)||[]; }}catch(e){{}}
 function cmpSave(){{ try{{ localStorage.setItem('cmp_list', JSON.stringify(compareList)); }}catch(e){{}} }}
+function cmpKeyOf(li){{
+  var name=li.getAttribute('data-name')||'';
+  var src=li.closest('#sblist')?'随申办':'明珠在线';
+  var right=((li.querySelector('.pdright')||{{}}).textContent||'').trim();
+  var addr=(right.split('·')[0]||'').trim();
+  return src+'|'+name+'|'+addr;
+}}
+function afterCmpChange(){{ cmpSave(); renderCompare(); syncCompareButtons(); }}
+function syncCompareButtons(){{
+  document.querySelectorAll('.cmp-add').forEach(function(b){{
+    var li=b.closest('.pditem'); if(!li) return;
+    var k=cmpKeyOf(li);
+    b.textContent = compareList.some(function(x){{ return x.key===k; }}) ? '已加入' : '加入比较';
+  }});
+}}
+function removeCompareAt(idx){{ compareList.splice(idx,1); afterCmpChange(); }}
 function addCompare(ev, btn){{
   if(ev) ev.stopPropagation();
   var li=btn.closest('.pditem'); if(!li) return;
+  var key=cmpKeyOf(li);
+  var pos=-1; compareList.forEach(function(x,i){{ if(x.key===key) pos=i; }});
+  if(pos>=0){{ removeCompareAt(pos); return; }}
   var name=li.getAttribute('data-name')||'';
   var src=li.closest('#sblist')?'随申办':'明珠在线';
   var right=((li.querySelector('.pdright')||{{}}).textContent||'').trim();
@@ -623,10 +644,8 @@ function addCompare(ev, btn){{
     var b=c.querySelector('b'); var lab=b?b.textContent.trim():'';
     fields[lab]=c.textContent.substring((b?b.textContent:'').length).trim();
   }});
-  var key=src+'|'+name+'|'+addr;
-  if(compareList.some(function(x){{ return x.key===key; }})){{ btn.textContent='已加入'; return; }}
   compareList.push({{key:key,name:name,src:src,kz:kz,addr:addr,tel:tel,fields:fields}});
-  cmpSave(); renderCompare(); btn.textContent='已加入';
+  afterCmpChange();
 }}
 var CMP_COLS=["套数","租金","户型","地铁","板块","状态","供应","受理","发布","地址","电话","介绍"];
 function renderCompare(){{
@@ -642,15 +661,22 @@ function renderCompare(){{
     var tr=document.createElement('tr'); tr.setAttribute('draggable','true'); tr.dataset.idx=idx;
     var tdx=document.createElement('td'); tdx.className='c-x';
     var x=document.createElement('button'); x.className='cmp-x'; x.textContent='×';
-    x.addEventListener('click', function(e){{ e.stopPropagation(); compareList.splice(idx,1); cmpSave(); renderCompare(); }});
+    x.addEventListener('click', function(e){{ e.stopPropagation(); removeCompareAt(idx); }});
     tdx.appendChild(x); tr.appendChild(tdx);
     var tdn=document.createElement('td'); tdn.className='c-name'; tdn.textContent=it.name; tdn.title=it.name;
     var sc=document.createElement('span'); sc.className='cmp-src'; sc.textContent=it.src; tdn.appendChild(sc); tr.appendChild(tdn);
     CMP_COLS.forEach(function(c){{
       var td=document.createElement('td');
       var v=(c==='套数')?it.kz:(c==='地址')?it.addr:(c==='电话')?it.tel:(it.fields[c]||'');
-      if(c==='介绍') td.className='c-intro';
-      td.textContent=v; if(v) td.title=v;
+      if(c==='介绍'){{
+        td.className='c-intro';
+        td.textContent=v;
+        if(v && v.length>24){{
+          var a=document.createElement('span'); a.className='c-expand'; a.textContent='展开';
+          a.addEventListener('click', function(e){{ e.stopPropagation(); td.classList.toggle('expanded'); a.textContent=td.classList.contains('expanded')?'收起':'展开'; }});
+          td.appendChild(a);
+        }}
+      }} else {{ td.textContent=v; if(v) td.title=v; }}
       tr.appendChild(td);
     }});
     tbody.appendChild(tr);
@@ -667,8 +693,8 @@ document.addEventListener('drop', function(e){{
   cmpDragIdx=null;
 }});
 function toggleCompare(){{ var p=document.getElementById('cmpPanel'); if(p) p.classList.toggle('open'); }}
-function clearCompare(){{ compareList=[]; cmpSave(); renderCompare(); }}
-renderCompare();
+function clearCompare(){{ compareList=[]; afterCmpChange(); }}
+renderCompare(); syncCompareButtons();
 document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
 ['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
 filterPd();
