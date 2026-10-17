@@ -34,7 +34,9 @@ def fetch_ssb_all():
         if isinstance(inner, str):
             inner = json.loads(inner)
         d = inner["data"]
-        out.extend(d.get("results", []))
+        res = d.get("results", [])
+        out.extend(res)
+        base.record_usage(1, len(res))
         if page * d.get("pageSize", 500) >= d.get("totalCount", 0):
             break
         page += 1

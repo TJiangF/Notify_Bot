@@ -133,7 +133,9 @@ def fetch_all():
         if isinstance(inner, str):
             inner = json.loads(inner)
         d = inner["data"]
-        out.extend(d.get("results", []))
+        res = d.get("results", [])
+        out.extend(res)
+        record_usage(1, len(res))
         if page * d.get("pageSize", PAGE_SIZE) >= d.get("totalCount", 0):
             break
         page += 1
@@ -159,7 +161,9 @@ def fetch_notice():
     inner = j["data"]
     if isinstance(inner, str):
         inner = json.loads(inner)
-    return inner["data"].get("results", [])
+    res = inner["data"].get("results", [])
+    record_usage(1, len(res))
+    return res
 
 
 def _enc(s):
@@ -330,6 +334,23 @@ def star(name):
 
 def now_bj():
     return datetime.now(timezone(timedelta(hours=8)))
+
+
+USAGE_FILE = os.path.join(BASE_DIR, "data", "usage.json")
+
+
+def record_usage(nreq=0, nrec=0):
+    try:
+        d = {}
+        if os.path.exists(USAGE_FILE):
+            d = json.load(open(USAGE_FILE))
+        today = now_bj().strftime("%Y-%m-%d")
+        e = d.setdefault(today, {"req": 0, "rec": 0})
+        e["req"] += nreq
+        e["rec"] += nrec
+        json.dump(d, open(USAGE_FILE, "w"))
+    except Exception:
+        pass
 
 
 def in_quiet_hours():

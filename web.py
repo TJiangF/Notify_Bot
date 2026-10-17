@@ -87,6 +87,13 @@ def index(base: str = Query(None)):
 def _admin_page(request, msg="", err=""):
     cfg = cfgmod.load()
     vtotal, vtoday = visit_stats()
+    usage = ""
+    try:
+        u = json.load(open(os.path.join(DATA_DIR, "usage.json")))
+        e = u.get(datetime.now(BJ).strftime("%Y-%m-%d"), {})
+        usage = f"随申办今日调用 {e.get('req',0)} 次请求 / {e.get('rec',0)} 条记录"
+    except Exception:
+        usage = ""
     logged = request.session.get("admin")
     if not logged:
         return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
@@ -112,7 +119,7 @@ input,textarea{{width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;b
 button{{padding:9px 16px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;margin-top:16px}}
 .ok{{color:#1a8f43;margin:8px 0}}</style></head><body><div class="wrap">
 <h2>监控 / 推送配置</h2>
-<p style="color:#888;font-size:13px;margin:0 0 10px">报表访问：累计 <b>{vtotal}</b> 次 ｜ 今日 <b>{vtoday}</b> 次</p>{('<div class=ok>'+msg+'</div>') if msg else ''}
+<p style="color:#888;font-size:13px;margin:0 0 10px">报表访问：累计 <b>{vtotal}</b> 次 ｜ 今日 <b>{vtoday}</b> 次<br>{usage}</p>{('<div class=ok>'+msg+'</div>') if msg else ''}
 <form method=post action="{ADMIN_PATH}/save">
 <label>企业微信 Webhook</label><input name=wecom_webhook value="{cfg.get('wecom_webhook','')}">
 <label>Server酱 SendKey</label><input name=serverchan_key value="{cfg.get('serverchan_key','')}">
