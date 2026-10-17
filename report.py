@@ -77,7 +77,8 @@ def district_stats(cur, changes):
 
 
 def esc(s):
-    return str(s if s is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (str(s if s is not None else "")
+            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"))
 
 
 def dtag(v):
@@ -212,7 +213,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             accept = " ~ ".join([d for d in [dday(x.get("accept_start")), dday(x.get("accept_end"))] if d]) or "—"
             badge = f'<span class="badge s-blue">{esc(htype)}</span>' if htype else ""
             sitems.append(
-                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-type="{esc(htype)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
+                f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-type="{esc(htype)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">在线 {x["online"]} 套</span></span>'
                 f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
@@ -270,7 +271,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
             badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
             pitems.append(
-                f'<li class="pditem" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
+                f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">可租 {x["kzts"]} 套</span></span>'
                 f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
@@ -357,6 +358,14 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .listwrap{{display:none}}
  .tbtn{{font-size:13px;padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#2563eb;cursor:pointer}}
  .tbtn:hover{{border-color:#2563eb}}
+ .hright{{display:flex;gap:10px;align-items:center}}
+ .searchbox{{position:relative}}
+ .searchbox .q{{padding:5px 26px 5px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;width:190px}}
+ .searchbox .qclear{{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:#999;font-size:16px;cursor:pointer;padding:0 4px;display:none}}
+ .sug{{display:none;position:absolute;z-index:40;top:100%;left:0;margin-top:2px;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.14);max-height:260px;overflow:auto;min-width:200px}}
+ .sug-item{{padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap}}
+ .sug-item:hover{{background:#eff6ff}}
+ .sug-item.muted{{color:#999;cursor:default}}
  .pdright{{color:#888;text-align:right;margin-left:auto;font-size:12px}}
  .pddetail{{display:none;padding:4px 4px 14px}}
  .pditem.open .pddetail{{display:block}}
@@ -405,12 +414,12 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2>全部房源明细</h2>
 <div class="box">
 <div class="allbox">
-<div class="listhead"><h3>随申办</h3><button type="button" class="tbtn" onclick="toggleList('sbwrap',this)">展开列表 ▾</button></div>
+<div class="listhead"><h3>随申办</h3><div class="hright"><div class="searchbox"><input id="sb_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="sb_clr">×</button><div id="sb_sug" class="sug"></div></div><button type="button" class="tbtn" onclick="toggleList('sbwrap',this)">展开列表 ▾</button></div></div>
 <div class="filters">{ssb_filter}</div>
 <div class="listwrap" id="sbwrap"><ul class="pdlist" id="sblist">{ssb_items}</ul></div>
 </div>
 <div class="allbox">
-<div class="listhead"><h3>明珠在线</h3><button type="button" class="tbtn" onclick="toggleList('pdwrap',this)">展开列表 ▾</button></div>
+<div class="listhead"><h3>明珠在线</h3><div class="hright"><div class="searchbox"><input id="pd_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="pd_clr">×</button><div id="pd_sug" class="sug"></div></div><button type="button" class="tbtn" onclick="toggleList('pdwrap',this)">展开列表 ▾</button></div></div>
 <div class="note note-top">* 可租套数按接口字段（kzts）提取，仅供参考，不保证当前有房。</div>
 <div class="filters">{pd_filter}</div>
 <div class="listwrap" id="pdwrap"><ul class="pdlist" id="pdlist">{pd_items}</ul></div>
@@ -461,6 +470,66 @@ function toggleList(id, btn){{
   if(el.style.display==='block'){{ el.style.display='none'; btn.textContent='展开列表 ▾'; }}
   else {{ el.style.display='block'; btn.textContent='收起列表 ▴'; }}
 }}
+function doSearch(src){{
+  var inp=document.getElementById(src+'_q');
+  var q=(inp.value||'').trim();
+  var listId=(src==='sb')?'sblist':'pdlist';
+  var wrapId=(src==='sb')?'sbwrap':'pdwrap';
+  var items=document.querySelectorAll('#'+listId+' .pditem');
+  if(!q){{ if(src==='sb') filterSb(); else filterPd(); return; }}
+  document.getElementById(wrapId).style.display='block';
+  items.forEach(function(li){{
+    var hit=(li.getAttribute('data-name')||'')===q;
+    li.style.display=hit?'':'none';
+    if(hit) li.classList.add('open');
+  }});
+}}
+function clearSearch(src){{
+  var inp=document.getElementById(src+'_q'); if(inp) inp.value='';
+  var sug=document.getElementById(src+'_sug'); if(sug){{ sug.style.display='none'; sug.innerHTML=''; }}
+  var cl=document.getElementById(src+'_clr'); if(cl) cl.style.display='none';
+  doSearch(src);
+}}
+function suggest(src){{
+  var inp=document.getElementById(src+'_q');
+  var sug=document.getElementById(src+'_sug');
+  var cl=document.getElementById(src+'_clr');
+  var listId=(src==='sb')?'sblist':'pdlist';
+  var q=(inp.value||'').trim();
+  if(cl) cl.style.display=q?'block':'none';
+  if(!q){{ sug.style.display='none'; sug.innerHTML=''; doSearch(src); return; }}
+  var names=[], seen={{}};
+  document.querySelectorAll('#'+listId+' .pditem').forEach(function(li){{
+    var nm=li.getAttribute('data-name')||'';
+    if(nm.indexOf(q)>=0 && !seen[nm]){{ seen[nm]=1; names.push(nm); }}
+  }});
+  names.sort();
+  sug.innerHTML='';
+  if(!names.length){{ var d=document.createElement('div'); d.className='sug-item muted'; d.textContent='无匹配'; sug.appendChild(d); sug.style.display='block'; return; }}
+  names.slice(0,50).forEach(function(n){{
+    var d=document.createElement('div'); d.className='sug-item'; d.textContent=n;
+    d.addEventListener('click', function(){{ inp.value=n; sug.style.display='none'; doSearch(src); }});
+    sug.appendChild(d);
+  }});
+  sug.style.display='block';
+}}
+['sb','pd'].forEach(function(src){{
+  var inp=document.getElementById(src+'_q');
+  if(inp){{
+    inp.addEventListener('input', function(){{ suggest(src); }});
+    inp.addEventListener('keydown', function(e){{
+      if(e.key==='Escape') clearSearch(src);
+      if(e.key==='Enter'){{ var s=document.getElementById(src+'_sug'); if(s) s.style.display='none'; doSearch(src); }}
+    }});
+  }}
+  var cl=document.getElementById(src+'_clr');
+  if(cl) cl.addEventListener('click', function(){{ clearSearch(src); }});
+}});
+document.addEventListener('click', function(e){{
+  if(!e.target.closest || !e.target.closest('.searchbox')){{
+    document.querySelectorAll('.sug').forEach(function(s){{ s.style.display='none'; }});
+  }}
+}});
 document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
 ['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
 filterPd();
