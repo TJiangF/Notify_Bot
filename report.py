@@ -89,6 +89,21 @@ def dtag(v):
     return "0"
 
 
+def _range_box(pfx, rmax):
+    rmax = int(rmax) if rmax else 20000
+    return (
+        '<span class="rangebox"><span class="rangedrag">'
+        f'<span class="rbar"><i id="{pfx}_rfill"></i></span>'
+        f'<input type="range" id="{pfx}_rsmin" min="0" max="{rmax}" step="50" value="0">'
+        f'<input type="range" id="{pfx}_rsmax" min="0" max="{rmax}" step="50" value="{rmax}">'
+        '</span>'
+        f'<input type="number" id="{pfx}_fmin" class="rn" placeholder="最低">'
+        '<span>-</span>'
+        f'<input type="number" id="{pfx}_fmax" class="rn" placeholder="最高">'
+        '</span>'
+    )
+
+
 def _fmt_card(cur, prv):
     if prv is None:
         return f"{cur}"
@@ -182,18 +197,26 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
         ssb = latest["ssb"]
         tag_opts = "".join(f'<label><input type="checkbox" class="sb_t" value="{esc(t)}"> {esc(t)}</label>'
                            for t in ["保障性租赁住房", "新青年就业安居"])
-        door_opts = "".join(f'<option value="{esc(d)}">{esc(d)}</option>' for d in ["单间", "一居室", "二居室", "三居室", "多居室"])
+        h_opts = "".join(f'<label><input type="checkbox" class="sb_h" value="{esc(d)}"> {esc(d)}</label>'
+                         for d in ["单间", "一居室", "二居室", "三居室", "多居室"])
         districts = sorted({x.get("district") for x in ssb if x.get("district")})
         dchecks = "".join(f'<label><input type="checkbox" class="sb_d" value="{esc(d)}"> {esc(d)}</label>' for d in districts)
+        hmax = 0
+        for x in ssb:
+            h = x.get("rent_high")
+            if isinstance(h, (int, float)):
+                hmax = max(hmax, h)
+        rmax = int((hmax // 1000 + 1) * 1000) if hmax else 20000
         ssb_filter = (
-            '<label>租金：<input id="sb_fmin" type="number" placeholder="最低" style="width:72px">'
-            ' - <input id="sb_fmax" type="number" placeholder="最高" style="width:72px"></label>'
+            '<label>租金：' + _range_box("sb", rmax) + '</label>'
             '<details class="ms"><summary id="sb_tsum">类型：全部</summary>'
             f'<div class="ms-list">{tag_opts}</div></details>'
-            f'<label>户型：<select id="sb_fdoor"><option value="">全部</option>{door_opts}</select></label>'
+            '<details class="ms"><summary id="sb_hsum">户型：全部</summary>'
+            f'<div class="ms-list">{h_opts}</div></details>'
             '<details class="ms"><summary id="sb_dsum">行政区：全部</summary>'
             f'<div class="ms-list">{dchecks}</div></details>'
-            '<button type="button" onclick="filterSb()">筛选</button>'
+            '<button type="button" onclick="applySb()">筛选</button>'
+            '<button type="button" class="btn-reset" onclick="resetSb()">清空筛选</button>'
         )
 
         def dday(v):
@@ -238,14 +261,23 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
         statuses = sorted({x.get("status") for x in pd if x.get("status")})
         metro_opts = "".join(f'<option value="{esc(m)}">{esc(m)}</option>' for m in metros)
         status_opts = "".join(f'<option value="{esc(s)}">{esc(s)}</option>' for s in statuses)
+        hmaxp = 0
+        for x in pd:
+            pr = x.get("price") or ""
+            nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", pr)]
+            if nums:
+                hmaxp = max(hmaxp, max(nums))
+        rmaxp = int((hmaxp // 1000 + 1) * 1000) if hmaxp else 20000
+        fy_opts = "".join(f'<label><input type="checkbox" class="pd_h" value="{esc(d)}"> {esc(d)}</label>'
+                          for d in ["一室", "二室", "三室"])
         pd_filter = (
-            '<label>租金：<input id="pd_fmin" type="number" placeholder="最低" style="width:72px">'
-            ' - <input id="pd_fmax" type="number" placeholder="最高" style="width:72px"></label>'
+            '<label>租金：' + _range_box("pd", rmaxp) + '</label>'
             f'<label>地铁：<select id="pd_fmetro"><option value="">全部</option>{metro_opts}</select></label>'
             f'<label>状态：<select id="pd_fstatus"><option value="">全部</option>{status_opts}</select></label>'
-            '<label>户型：<select id="pd_ffy"><option value="">全部</option>'
-            '<option value="一室">一室</option><option value="二室">二室</option><option value="三室">三室</option></select></label>'
-            '<button type="button" onclick="filterPd()">筛选</button>'
+            '<details class="ms"><summary id="pd_hsum">户型：全部</summary>'
+            f'<div class="ms-list">{fy_opts}</div></details>'
+            '<button type="button" onclick="applyPd()">筛选</button>'
+            '<button type="button" class="btn-reset" onclick="resetPd()">清空筛选</button>'
         )
         pitems = []
         for x in sorted(pd, key=lambda a: -(a["kzts"] or 0)):
@@ -372,6 +404,15 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .ms[open]>summary::after{{content:"▴"}}
  .ms .ms-list{{position:absolute;z-index:20;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px 10px;max-height:260px;overflow:auto;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:160px}}
  .ms .ms-list label{{display:block;white-space:nowrap;font-size:13px;padding:3px 0;cursor:pointer}}
+ .rangebox{{display:inline-flex;align-items:center;gap:8px;vertical-align:middle}}
+ .rangedrag{{position:relative;width:170px;height:22px;flex:0 0 auto}}
+ .rangedrag .rbar{{position:absolute;top:9px;left:0;right:0;height:4px;background:#e2e8f0;border-radius:2px}}
+ .rangedrag .rbar i{{position:absolute;top:0;height:4px;background:#2563eb;border-radius:2px}}
+ .rangedrag input[type=range]{{position:absolute;left:0;top:0;width:100%;height:22px;margin:0;background:transparent;-webkit-appearance:none;appearance:none;pointer-events:none}}
+ .rangedrag input[type=range]::-webkit-slider-thumb{{-webkit-appearance:none;pointer-events:auto;width:16px;height:16px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 1px 4px rgba(37,99,235,.5);cursor:pointer}}
+ .rangebox .rn{{width:66px;padding:5px 6px;border:1px solid #ccc;border-radius:6px;font-size:13px}}
+ .btn-reset{{font-size:13px;padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#666;cursor:pointer}}
+ .btn-reset:hover{{border-color:#f43f5e;color:#f43f5e}}
  .listhead{{display:flex;justify-content:space-between;align-items:center;margin:16px 0 4px}}
  .listhead h3{{margin:0}}
  .listwrap{{display:none}}
@@ -518,10 +559,12 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 function filterSb(){{
   var mn=parseFloat((document.getElementById('sb_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
   var mx=parseFloat((document.getElementById('sb_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
-  var dr=(document.getElementById('sb_fdoor')||{{}}).value||'';
   var tset={{}}; document.querySelectorAll('.sb_t:checked').forEach(function(c){{ tset[c.value]=1; }});
   var tkeys=Object.keys(tset); var tn=tkeys.length;
   var tsum=document.getElementById('sb_tsum'); if(tsum) tsum.textContent='类型：'+(tn?('已选 '+tn+' 个'):'全部');
+  var hset={{}}; document.querySelectorAll('.sb_h:checked').forEach(function(c){{ hset[c.value]=1; }});
+  var hkeys=Object.keys(hset); var hn=hkeys.length;
+  var hsum=document.getElementById('sb_hsum'); if(hsum) hsum.textContent='户型：'+(hn?('已选 '+hn+' 个'):'全部');
   var dset={{}}; document.querySelectorAll('.sb_d:checked').forEach(function(c){{ dset[c.value]=1; }});
   var n=Object.keys(dset).length;
   var sum=document.getElementById('sb_dsum'); if(sum) sum.textContent='行政区：'+(n?('已选 '+n+' 个'):'全部');
@@ -530,24 +573,79 @@ function filterSb(){{
     var okP=(pmax>=mn)&&(pmin<=mx);
     var tags=li.getAttribute('data-tags')||'';
     var okT=!tn||tkeys.some(function(t){{ return tags.indexOf(t)>=0; }});
-    var okD=!dr||(li.getAttribute('data-door')||'').indexOf(dr)>=0;
+    var doors=li.getAttribute('data-door')||'';
+    var okH=!hn||hkeys.some(function(t){{ return doors.indexOf(t)>=0; }});
     var okA=!n||dset[li.getAttribute('data-d')];
-    li.style.display=(okP&&okT&&okD&&okA)?'':'none';
+    li.style.display=(okP&&okT&&okH&&okA)?'':'none';
   }});
+}}
+function applySb(){{ var w=document.getElementById('sbwrap'); if(w) w.style.display='block'; setToggle('sbwrap','收起列表 ▴'); filterSb(); }}
+function applyPd(){{ var w=document.getElementById('pdwrap'); if(w) w.style.display='block'; setToggle('pdwrap','收起列表 ▴'); filterPd(); }}
+function setToggle(wrapId, txt){{ document.querySelectorAll('.tbtn').forEach(function(b){{ if((b.getAttribute('onclick')||'').indexOf(wrapId)>=0) b.textContent=txt; }}); }}
+function resetSb(){{
+  var a=document.getElementById('sb_fmin'); if(a) a.value='';
+  var b=document.getElementById('sb_fmax'); if(b) b.value='';
+  document.querySelectorAll('.sb_t,.sb_h,.sb_d').forEach(function(c){{ c.checked=false; }});
+  if(window.__sbRange) window.__sbRange();
+  filterSb();
+}}
+function resetPd(){{
+  var a=document.getElementById('pd_fmin'); if(a) a.value='';
+  var b=document.getElementById('pd_fmax'); if(b) b.value='';
+  document.querySelectorAll('.pd_h').forEach(function(c){{ c.checked=false; }});
+  var m=document.getElementById('pd_fmetro'); if(m) m.value='';
+  var s=document.getElementById('pd_fstatus'); if(s) s.value='';
+  if(window.__pdRange) window.__pdRange();
+  filterPd();
+}}
+function bindRange(pfx){{
+  var smin=document.getElementById(pfx+'_rsmin'), smax=document.getElementById(pfx+'_rsmax');
+  var fmin=document.getElementById(pfx+'_fmin'), fmax=document.getElementById(pfx+'_fmax');
+  var fill=document.getElementById(pfx+'_rfill');
+  if(!smin||!smax||!fmin||!fmax) return function(){{}};
+  var lo=parseInt(smin.min,10)||0, hi=parseInt(smin.max,10)||20000;
+  function cb(){{ if(pfx==='sb') filterSb(); else filterPd(); }}
+  function draw(){{
+    var a=parseFloat(smin.value), b=parseFloat(smax.value);
+    var p1=(a-lo)/(hi-lo)*100, p2=(b-lo)/(hi-lo)*100;
+    if(fill){{ fill.style.left=p1+'%'; fill.style.width=Math.max(0,p2-p1)+'%'; }}
+  }}
+  smin.addEventListener('input', function(){{
+    if(parseFloat(smin.value)>parseFloat(smax.value)) smin.value=smax.value;
+    var a=parseFloat(smin.value), b=parseFloat(smax.value);
+    fmin.value=(a<=lo?'':a); fmax.value=(b>=hi?'':b); draw(); cb();
+  }});
+  smax.addEventListener('input', function(){{
+    if(parseFloat(smax.value)<parseFloat(smin.value)) smax.value=smin.value;
+    var a=parseFloat(smin.value), b=parseFloat(smax.value);
+    fmin.value=(a<=lo?'':a); fmax.value=(b>=hi?'':b); draw(); cb();
+  }});
+  function fromNums(){{
+    var a=parseFloat(fmin.value); if(isNaN(a)) a=lo;
+    var b=parseFloat(fmax.value); if(isNaN(b)) b=hi;
+    if(a<lo)a=lo; if(b>hi)b=hi; if(a>b){{ var t=a;a=b;b=t; }}
+    smin.value=a; smax.value=b; draw(); cb();
+  }}
+  fmin.addEventListener('input', fromNums); fmax.addEventListener('input', fromNums);
+  draw();
+  return function(){{ smin.value=lo; smax.value=hi; fmin.value=''; fmax.value=''; draw(); }};
 }}
 function filterPd(){{
   var mn=parseFloat((document.getElementById('pd_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
   var mx=parseFloat((document.getElementById('pd_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
   var mt=(document.getElementById('pd_fmetro')||{{}}).value||'';
   var st=(document.getElementById('pd_fstatus')||{{}}).value||'';
-  var fy=(document.getElementById('pd_ffy')||{{}}).value||'';
+  var hset={{}}; document.querySelectorAll('.pd_h:checked').forEach(function(c){{ hset[c.value]=1; }});
+  var hkeys=Object.keys(hset); var hn=hkeys.length;
+  var hsum=document.getElementById('pd_hsum'); if(hsum) hsum.textContent='户型：'+(hn?('已选 '+hn+' 个'):'全部');
   document.querySelectorAll('#pdlist .pditem').forEach(function(li){{
     var pmin=parseFloat(li.getAttribute('data-pmin'))||0;
     var pmax=parseFloat(li.getAttribute('data-pmax'))||0;
     var okP=(pmax>=mn)&&(pmin<=mx);
     var okM=!mt||(li.getAttribute('data-metro')||'').indexOf(mt)>=0;
     var okS=!st||li.getAttribute('data-status')===st;
-    var okF=!fy||(li.getAttribute('data-fy')||'').indexOf(fy)>=0;
+    var fy=li.getAttribute('data-fy')||'';
+    var okF=!hn||hkeys.some(function(t){{ return fy.indexOf(t)>=0; }});
     li.style.display=(okP&&okM&&okS&&okF)?'':'none';
   }});
 }}
@@ -758,11 +856,12 @@ document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('c
   var item=h.parentNode; item.classList.toggle('open');
   if(item.classList.contains('open')){{ var c=item.querySelector('.cmts'); if(c) loadComments(c); }}
 }}); }});
-['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
+document.querySelectorAll('.pd_h').forEach(function(c){{ c.addEventListener('change', filterPd); }});
+['pd_fmetro','pd_fstatus'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('change', filterPd); }});
+window.__pdRange=bindRange('pd');
 filterPd();
-['sb_fmin','sb_fmax','sb_fdoor'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterSb); el.addEventListener('input', filterSb); }} }});
-document.querySelectorAll('.sb_t').forEach(function(c){{ c.addEventListener('change', filterSb); }});
-document.querySelectorAll('.sb_d').forEach(function(c){{ c.addEventListener('change', filterSb); }});
+document.querySelectorAll('.sb_t,.sb_h,.sb_d').forEach(function(c){{ c.addEventListener('change', filterSb); }});
+window.__sbRange=bindRange('sb');
 filterSb();
 </script>
 </body></html>"""
