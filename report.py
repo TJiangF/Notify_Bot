@@ -315,8 +315,18 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>上海房源变化报表</title>
 <style>
- body{{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222}}
- .wrap{{max-width:960px;margin:0 auto;padding:24px}}
+ html{{scroll-behavior:smooth}}
+ body{{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;display:flex;align-items:flex-start}}
+ #sidebar{{flex:0 0 210px;position:sticky;top:0;height:100vh;overflow:auto;background:#fff;border-right:1px solid #e6e8eb;transition:flex-basis .2s}}
+ #sidebar.collapsed{{flex-basis:46px}}
+ #sidebar .sb-inner{{padding:12px 10px}}
+ #sidebar.collapsed .sb-link,#sidebar.collapsed .sb-title{{display:none}}
+ .sb-toggle{{float:right;background:none;border:0;font-size:18px;cursor:pointer;color:#555;padding:2px 6px;line-height:1}}
+ .sb-title{{font-size:12px;color:#999;margin:10px 0 6px;clear:both}}
+ .sb-link{{display:block;padding:7px 8px;color:#333;font-size:14px;border-radius:6px;text-decoration:none;white-space:nowrap}}
+ .sb-link:hover{{background:#eef4fd;color:#2563eb}}
+ @media (max-width:760px){{ #sidebar{{display:none}} }}
+ .wrap{{flex:1;min-width:0;max-width:1000px;margin:0 auto;padding:24px}}
  h1{{font-size:22px;margin:0 0 4px}}
  .sub{{color:#666;font-size:14px;margin:6px 0 18px;line-height:1.9}}
  .sub select{{padding:4px 8px;border:1px solid #ccc;border-radius:6px;font-size:14px}}
@@ -380,8 +390,20 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
    th,td{{font-size:12px;padding:6px 5px}}
    .card .n{{font-size:20px}}
  }}
-</style></head><body><div class="wrap">
-<h1>上海房源变化报表</h1>
+</style></head><body>
+<div id="sidebar"><div class="sb-inner">
+<button class="sb-toggle" onclick="toggleNav()">«</button>
+<div class="sb-title">章节</div>
+<a class="sb-link" href="#sec-top">概览</a>
+<a class="sb-link" href="#sec-notice">供应预告</a>
+<a class="sb-link" href="#sec-ssb">随申办·行政区</a>
+<a class="sb-link" href="#sec-pd">明珠在线·行政区</a>
+<a class="sb-link" href="#sec-chg">变动明细</a>
+<a class="sb-link" href="#sec-all">全部房源明细</a>
+<a class="sb-link" href="#sec-trend">逐日趋势</a>
+</div></div>
+<div class="wrap">
+<h1 id="sec-top">上海房源变化报表</h1>
 <div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每 30 分钟更新，页面每 30 分钟自动刷新</div></div>
 <div class="cards">
  <div class="card"><div class="n">{c_ssb}</div><div class="l">随申办 项目数</div></div>
@@ -391,27 +413,27 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  <div class="card"><div class="n">{c_notice}</div><div class="l">随申办 供应预告</div></div>
 </div>
 
-<h2>随申办 · 供应预告（{len(notice)}）</h2>
+<h2 id="sec-notice">随申办 · 供应预告（{len(notice)}）</h2>
 <table><thead><tr><th>项目</th><th>计划供应日</th><th>租金</th><th>地址</th><th>电话</th><th>运营单位</th></tr></thead>
 <tbody>{notice_table}</tbody></table>
 
-<h2>随申办 · 按行政区</h2>
+<h2 id="sec-ssb">随申办 · 按行政区</h2>
 <table><thead><tr><th>行政区</th><th>项目数</th><th>在线房源</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
 <tbody>{dist_table}</tbody></table>
 <div class="note">* "在线房源"取自平台自带字段（onlineFlatNum），仅代表该时刻的在线套数，不保证随时可租。</div>
 
-<h2>明珠在线 · 按行政区</h2>
+<h2 id="sec-pd">明珠在线 · 按行政区</h2>
 <table><thead><tr><th>行政区</th><th>项目数</th><th>可租套数</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
 <tbody>{pd_table}</tbody></table>
 <div class="note">* "可租套数"取自平台页面自带字段（kzts），不保证当前有房；显示 0 套表示该项目当前无可租房源（如已租满或尚未供应）。</div>
 
-<h2>变动明细（当前 vs 基线）</h2>
+<h2 id="sec-chg">变动明细（当前 vs 基线）</h2>
 <div class="box">
 {detail("随申办", ssb_ch)}
 {detail("明珠在线", pd_ch)}
 </div>
 
-<h2>全部房源明细</h2>
+<h2 id="sec-all">全部房源明细</h2>
 <div class="box">
 <div class="allbox">
 <div class="listhead"><h3>随申办</h3><div class="hright"><div class="searchbox"><input id="sb_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="sb_clr">×</button><div id="sb_sug" class="sug"></div></div><button type="button" class="tbtn" onclick="toggleList('sbwrap',this)">展开列表 ▾</button></div></div>
@@ -426,7 +448,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 </div>
 </div>
 
-<h2>逐日趋势</h2>
+<h2 id="sec-trend">逐日趋势</h2>
 <table><thead><tr><th>日期</th><th>随申办项目</th><th>随申办在线</th><th>明珠项目</th><th>明珠可租</th></tr></thead>
 <tbody>{trend_table}</tbody></table>
 </div>
@@ -470,6 +492,22 @@ function toggleList(id, btn){{
   if(el.style.display==='block'){{ el.style.display='none'; btn.textContent='展开列表 ▾'; }}
   else {{ el.style.display='block'; btn.textContent='收起列表 ▴'; }}
 }}
+function toggleNav(){{
+  var el=document.getElementById('sidebar');
+  el.classList.toggle('collapsed');
+  var b=el.querySelector('.sb-toggle');
+  if(b) b.textContent=el.classList.contains('collapsed')?'»':'«';
+  try{{ localStorage.setItem('nav_collapsed', el.classList.contains('collapsed')?'1':'0'); }}catch(e){{}}
+}}
+(function(){{
+  try{{
+    var el=document.getElementById('sidebar');
+    if(el && localStorage.getItem('nav_collapsed')==='1'){{
+      el.classList.add('collapsed');
+      var b=el.querySelector('.sb-toggle'); if(b) b.textContent='»';
+    }}
+  }}catch(e){{}}
+}})();
 function doSearch(src){{
   var inp=document.getElementById(src+'_q');
   var q=(inp.value||'').trim();
