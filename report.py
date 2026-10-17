@@ -216,7 +216,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-type="{esc(htype)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">在线 {x["online"]} 套</span></span>'
-                f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
+                f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
+                f'<button type="button" class="cmp-add" onclick="addCompare(event,this)">加入比较</button></span></div>'
                 f'<div class="pddetail"><div class="pdgrid">'
                 f'<div class="pdcell"><b>租金</b>{esc(price)}</div>'
                 f'<div class="pdcell"><b>户型</b>{esc("、".join(dts)) or "—"}</div>'
@@ -274,7 +275,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">可租 {x["kzts"]} 套</span></span>'
-                f'<span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span></div>'
+                f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
+                f'<button type="button" class="cmp-add" onclick="addCompare(event,this)">加入比较</button></span></div>'
                 f'<div class="pddetail"><div class="pdgrid">'
                 f'<div class="pdcell"><b>租金</b>{esc(price) or "—"}</div>'
                 f'<div class="pdcell"><b>地铁</b>{esc(metro) or "—"}</div>'
@@ -376,7 +378,29 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .sug-item{{padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap}}
  .sug-item:hover{{background:#eff6ff}}
  .sug-item.muted{{color:#999;cursor:default}}
- .pdright{{color:#888;text-align:right;margin-left:auto;font-size:12px}}
+ .pdheadright{{display:flex;align-items:center;gap:10px;margin-left:auto}}
+ .pdright{{color:#888;text-align:right;font-size:12px}}
+ .cmp-add{{font-size:12px;padding:3px 10px;border:1px solid #2563eb;color:#2563eb;background:#fff;border-radius:14px;cursor:pointer;white-space:nowrap}}
+ .cmp-add:hover{{background:#2563eb;color:#fff}}
+ .cmp-fab{{position:fixed;right:18px;bottom:18px;z-index:70;background:#2563eb;color:#fff;border:0;border-radius:22px;padding:11px 18px;box-shadow:0 6px 18px rgba(37,99,235,.45);cursor:pointer;font-size:14px}}
+ .cmp-fab:hover{{background:#1d4ed8}}
+ .cmp{{position:fixed;right:18px;bottom:72px;z-index:70;width:400px;max-width:92vw;max-height:72vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);display:none;flex-direction:column;overflow:hidden}}
+ .cmp.open{{display:flex}}
+ .cmp-head{{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-bottom:1px solid #eef0f3;font-weight:600;font-size:14px}}
+ .cmp-clear{{font-size:12px;color:#999;font-weight:400;cursor:pointer;background:none;border:0}}
+ .cmp-list{{overflow:auto;padding:6px;background:#fafbfc}}
+ .cmp-row{{display:flex;gap:8px;align-items:flex-start;padding:9px;border:1px solid #e6e8eb;border-radius:10px;margin:6px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03)}}
+ .cmp-row.cmp-dragging{{opacity:.45;border-style:dashed}}
+ .cmp-x{{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:0;background:#f43f5e;color:#fff;cursor:pointer;line-height:1;font-size:14px;padding:0}}
+ .cmp-x:hover{{background:#e11d48}}
+ .cmp-handle{{flex:0 0 auto;cursor:grab;color:#c0c4cc;font-size:14px;user-select:none;line-height:22px}}
+ .cmp-body{{flex:1;min-width:0}}
+ .cmp-name{{font-weight:600;font-size:13px;margin-bottom:4px}}
+ .cmp-meta{{display:flex;flex-wrap:wrap;gap:4px 6px}}
+ .cmp-chip{{font-size:11px;color:#555;background:#f2f5f9;border-radius:6px;padding:2px 7px;line-height:1.5}}
+ .cmp-chip b{{color:#999;font-weight:400}}
+ .cmp-empty{{color:#999;font-size:13px;padding:22px;text-align:center}}
+ .cmp-src{{font-size:10px;color:#fff;background:#9aa4b2;border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle}}
  .pddetail{{display:none;padding:4px 4px 14px}}
  .pditem.open .pddetail{{display:block}}
  .pdgrid{{display:block}}
@@ -386,9 +410,11 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
    .wrap{{padding:12px}}
    h1{{font-size:19px}}
    .pdhead{{font-size:13px}}
-   .pdright{{width:100%;text-align:left;margin-left:0}}
+   .pdheadright{{width:100%;justify-content:space-between;margin-left:0;margin-top:4px}}
+   .pdright{{text-align:left}}
    th,td{{font-size:12px;padding:6px 5px}}
    .card .n{{font-size:20px}}
+   .cmp{{left:8px;right:8px;width:auto;bottom:66px}}
  }}
 </style></head><body>
 <div id="sidebar"><div class="sb-inner">
@@ -451,6 +477,11 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2 id="sec-trend">逐日趋势</h2>
 <table><thead><tr><th>日期</th><th>随申办项目</th><th>随申办在线</th><th>明珠项目</th><th>明珠可租</th></tr></thead>
 <tbody>{trend_table}</tbody></table>
+</div>
+<button id="cmpFab" class="cmp-fab" onclick="toggleCompare()">对比 <span id="cmpFabN">0</span></button>
+<div id="cmpPanel" class="cmp">
+  <div class="cmp-head"><span>对比清单 <span id="cmpN">0</span></span><button class="cmp-clear" onclick="clearCompare()">清空</button></div>
+  <div class="cmp-list" id="cmpList"></div>
 </div>
 <script>
 function filterSb(){{
@@ -568,6 +599,67 @@ document.addEventListener('click', function(e){{
     document.querySelectorAll('.sug').forEach(function(s){{ s.style.display='none'; }});
   }}
 }});
+var compareList=[];
+try{{ var _c=localStorage.getItem('cmp_list'); if(_c) compareList=JSON.parse(_c)||[]; }}catch(e){{}}
+function cmpSave(){{ try{{ localStorage.setItem('cmp_list', JSON.stringify(compareList)); }}catch(e){{}} }}
+function addCompare(ev, btn){{
+  if(ev) ev.stopPropagation();
+  var li=btn.closest('.pditem'); if(!li) return;
+  var name=li.getAttribute('data-name')||'';
+  var src=li.closest('#sblist')?'随申办':'明珠在线';
+  var right=((li.querySelector('.pdright')||{{}}).textContent||'').trim();
+  var kz=((li.querySelector('.pdkz')||{{}}).textContent||'').trim();
+  var details=[];
+  li.querySelectorAll('.pdgrid .pdcell').forEach(function(c){{
+    var b=c.querySelector('b'); var lab=b?b.textContent:'';
+    details.push([lab, c.textContent.substring(lab.length).trim()]);
+  }});
+  var key=src+'|'+name+'|'+right;
+  if(compareList.some(function(x){{ return x.key===key; }})){{ btn.textContent='已加入'; return; }}
+  compareList.push({{key:key,name:name,src:src,right:right,kz:kz,details:details}});
+  cmpSave(); renderCompare(); btn.textContent='已加入';
+}}
+function renderCompare(){{
+  var list=document.getElementById('cmpList'); if(!list) return;
+  var n=compareList.length;
+  var e1=document.getElementById('cmpN'); if(e1) e1.textContent=n;
+  var e2=document.getElementById('cmpFabN'); if(e2) e2.textContent=n;
+  list.innerHTML='';
+  if(!n){{ var d=document.createElement('div'); d.className='cmp-empty'; d.textContent='还没有加入对比的房源'; list.appendChild(d); return; }}
+  compareList.forEach(function(it, idx){{
+    var row=document.createElement('div'); row.className='cmp-row'; row.setAttribute('draggable','true'); row.dataset.idx=idx;
+    var x=document.createElement('button'); x.className='cmp-x'; x.textContent='×';
+    x.addEventListener('click', function(e){{ e.stopPropagation(); compareList.splice(idx,1); cmpSave(); renderCompare(); }});
+    var h=document.createElement('span'); h.className='cmp-handle'; h.textContent='⋮⋮';
+    var body=document.createElement('div'); body.className='cmp-body';
+    var nm=document.createElement('div'); nm.className='cmp-name'; nm.textContent=it.name;
+    var sc=document.createElement('span'); sc.className='cmp-src'; sc.textContent=it.src; nm.appendChild(sc);
+    body.appendChild(nm);
+    var meta=document.createElement('div'); meta.className='cmp-meta';
+    if(it.kz){{ var c0=document.createElement('span'); c0.className='cmp-chip'; c0.textContent=it.kz; meta.appendChild(c0); }}
+    it.details.forEach(function(dd){{
+      var s=document.createElement('span'); s.className='cmp-chip';
+      var bb=document.createElement('b'); bb.textContent=dd[0]+' '; s.appendChild(bb); s.appendChild(document.createTextNode(dd[1])); meta.appendChild(s);
+    }});
+    if(it.right){{ var cr=document.createElement('span'); cr.className='cmp-chip'; cr.textContent=it.right; meta.appendChild(cr); }}
+    body.appendChild(meta);
+    row.appendChild(x); row.appendChild(h); row.appendChild(body);
+    list.appendChild(row);
+  }});
+}}
+var cmpDragIdx=null;
+document.addEventListener('dragstart', function(e){{ var r=e.target.closest&&e.target.closest('.cmp-row'); if(r){{ cmpDragIdx=+r.dataset.idx; r.classList.add('cmp-dragging'); }} }});
+document.addEventListener('dragend', function(e){{ var r=e.target.closest&&e.target.closest('.cmp-row'); if(r) r.classList.remove('cmp-dragging'); }});
+document.addEventListener('dragover', function(e){{ if(e.target.closest&&e.target.closest('.cmp-list')) e.preventDefault(); }});
+document.addEventListener('drop', function(e){{
+  var r=e.target.closest&&e.target.closest('.cmp-row'); if(!r||cmpDragIdx===null) return;
+  e.preventDefault(); var over=+r.dataset.idx;
+  if(over!==cmpDragIdx){{ var it=compareList.splice(cmpDragIdx,1)[0]; compareList.splice(over,0,it); cmpSave(); renderCompare(); }}
+  cmpDragIdx=null;
+}});
+function toggleCompare(){{ var p=document.getElementById('cmpPanel'); if(p) p.classList.toggle('open'); }}
+function clearCompare(){{ compareList=[]; cmpSave(); renderCompare(); }}
+renderCompare();
 document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
 ['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
 filterPd();
