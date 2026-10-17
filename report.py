@@ -329,7 +329,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  h2{{font-size:17px;margin:26px 0 10px}} h3{{font-size:15px;margin:18px 0 6px}}
  h4{{margin:10px 0 4px;font-size:13px;color:#555}} ul{{margin:4px 0 10px;padding-left:22px}} li{{font-size:13px;margin:3px 0;line-height:1.5}}
  .box{{background:#fff;border-radius:10px;padding:6px 18px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
- .filters{{display:flex;flex-wrap:wrap;gap:8px 16px;padding:10px 0;border-bottom:1px solid #eee;margin-bottom:6px}}
+ .filters{{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 0;border-bottom:1px solid #eee;margin-bottom:6px}}
  .filters label{{font-size:13px;cursor:pointer;user-select:none;white-space:nowrap}}
  .filters input{{margin-right:4px;vertical-align:middle}}
  .grp{{margin:6px 0}} .alllist{{margin:6px 0 2px;padding-left:22px}} .alllist li{{font-size:13px;margin:3px 0;line-height:1.5}}
@@ -345,11 +345,18 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .badge{{font-size:11px;padding:1px 6px;border-radius:8px;margin-left:6px;color:#fff;white-space:nowrap}}
  .s-yy{{background:#1a8f43}} .s-dg{{background:#e08a00}} .s-zj{{background:#888}} .s-ot{{background:#999}} .s-blue{{background:#5b9bd5}}
  .ms{{position:relative;display:inline-block}}
- .ms>summary{{cursor:pointer;font-size:13px;list-style:none;padding:4px 10px;border:1px solid #ccc;border-radius:6px;background:#fff}}
- .ms>summary::-webkit-details-marker{{display:none}}
+ .ms>summary{{cursor:pointer;font-size:14px;list-style:none;padding:6px 24px 6px 8px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#000;white-space:nowrap}}
  .ms[open]>summary{{border-color:#2563eb}}
- .ms .ms-list{{position:absolute;z-index:20;background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px 10px;max-height:260px;overflow:auto;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:160px}}
+ .ms>summary::-webkit-details-marker{{display:none}}
+ .ms>summary::after{{content:"▾";position:absolute;right:8px;color:#888}}
+ .ms[open]>summary::after{{content:"▴"}}
+ .ms .ms-list{{position:absolute;z-index:20;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px 10px;max-height:260px;overflow:auto;box-shadow:0 4px 12px rgba(0,0,0,.12);min-width:160px}}
  .ms .ms-list label{{display:block;white-space:nowrap;font-size:13px;padding:3px 0;cursor:pointer}}
+ .listhead{{display:flex;justify-content:space-between;align-items:center;margin:16px 0 4px}}
+ .listhead h3{{margin:0}}
+ .listwrap{{display:none}}
+ .tbtn{{font-size:13px;padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#2563eb;cursor:pointer}}
+ .tbtn:hover{{border-color:#2563eb}}
  .pdright{{color:#888;text-align:right;margin-left:auto;font-size:12px}}
  .pddetail{{display:none;padding:4px 4px 14px}}
  .pditem.open .pddetail{{display:block}}
@@ -398,15 +405,15 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2>全部房源明细</h2>
 <div class="box">
 <div class="allbox">
-<h3>随申办</h3>
+<div class="listhead"><h3>随申办</h3><button type="button" class="tbtn" onclick="toggleList('sbwrap',this)">展开列表 ▾</button></div>
 <div class="filters">{ssb_filter}</div>
-<ul class="pdlist" id="sblist">{ssb_items}</ul>
+<div class="listwrap" id="sbwrap"><ul class="pdlist" id="sblist">{ssb_items}</ul></div>
 </div>
 <div class="allbox">
-<h3>明珠在线</h3>
+<div class="listhead"><h3>明珠在线</h3><button type="button" class="tbtn" onclick="toggleList('pdwrap',this)">展开列表 ▾</button></div>
 <div class="note note-top">* 可租套数按接口字段（kzts）提取，仅供参考，不保证当前有房。</div>
 <div class="filters">{pd_filter}</div>
-<ul class="pdlist" id="pdlist">{pd_items}</ul>
+<div class="listwrap" id="pdwrap"><ul class="pdlist" id="pdlist">{pd_items}</ul></div>
 </div>
 </div>
 
@@ -447,6 +454,12 @@ function filterPd(){{
     var okF=!fy||(li.getAttribute('data-fy')||'').indexOf(fy)>=0;
     li.style.display=(okP&&okM&&okS&&okF)?'':'none';
   }});
+}}
+function toggleList(id, btn){{
+  var el=document.getElementById(id);
+  if(!el) return;
+  if(el.style.display==='block'){{ el.style.display='none'; btn.textContent='展开列表 ▾'; }}
+  else {{ el.style.display='block'; btn.textContent='收起列表 ▴'; }}
 }}
 document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
 ['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
