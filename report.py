@@ -180,15 +180,16 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 
     def all_projects(latest):
         ssb = latest["ssb"]
-        htypes = sorted({x.get("house_type") for x in ssb if x.get("house_type")})
-        hb_opts = "".join(f'<option value="{esc(h)}">{esc(h)}</option>' for h in htypes)
+        tag_opts = "".join(f'<label><input type="checkbox" class="sb_t" value="{esc(t)}"> {esc(t)}</label>'
+                           for t in ["保障性租赁住房", "新青年就业安居"])
         door_opts = "".join(f'<option value="{esc(d)}">{esc(d)}</option>' for d in ["单间", "一居室", "二居室", "三居室", "多居室"])
         districts = sorted({x.get("district") for x in ssb if x.get("district")})
         dchecks = "".join(f'<label><input type="checkbox" class="sb_d" value="{esc(d)}"> {esc(d)}</label>' for d in districts)
         ssb_filter = (
             '<label>租金：<input id="sb_fmin" type="number" placeholder="最低" style="width:72px">'
             ' - <input id="sb_fmax" type="number" placeholder="最高" style="width:72px"></label>'
-            f'<label>类型：<select id="sb_ftype"><option value="">全部</option>{hb_opts}</select></label>'
+            '<details class="ms"><summary id="sb_tsum">类型：全部</summary>'
+            f'<div class="ms-list">{tag_opts}</div></details>'
             f'<label>户型：<select id="sb_fdoor"><option value="">全部</option>{door_opts}</select></label>'
             '<details class="ms"><summary id="sb_dsum">行政区：全部</summary>'
             f'<div class="ms-list">{dchecks}</div></details>'
@@ -205,16 +206,22 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             pmin = min(nums) if nums else 0
             pmax = max(nums) if nums else 0
             price = f"{lo} ~ {hi} 元" if (lo is not None or hi is not None) else "—"
-            htype = x.get("house_type") or ""
+            tags = []
+            ht = x.get("house_type")
+            if ht:
+                tags.append(ht)
+            if x.get("qnaj"):
+                tags.append("新青年就业安居")
+            badges = "".join(f'<span class="badge {"s-green" if t == "新青年就业安居" else "s-blue"}">{esc(t)}</span>' for t in tags)
+            tags_attr = "、".join(tags)
             dts = [t.strip() for t in (x.get("door_type") or "").replace("，", "、").split("、") if t.strip()]
             door_key = "、".join(dts)
             district = x.get("district") or ""
             supply = " ~ ".join([d for d in [dday(x.get("supply_start")), dday(x.get("supply_end"))] if d]) or "—"
             accept = " ~ ".join([d for d in [dday(x.get("accept_start")), dday(x.get("accept_end"))] if d]) or "—"
-            badge = f'<span class="badge s-blue">{esc(htype)}</span>' if htype else ""
             sitems.append(
-                f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-type="{esc(htype)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
-                f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
+                f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-tags="{esc(tags_attr)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
+                f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badges}'
                 f'<span class="pdkz">在线 {x["online"]} 套</span></span>'
                 f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
                 f'<button type="button" class="cmp-add" onclick="addCompare(event,this)">加入比较</button></span></div>'
@@ -356,7 +363,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .pdname{{font-weight:600}}
  .pdkz{{color:#1a8f43;font-weight:600;margin-left:8px;font-size:12px}}
  .badge{{font-size:11px;padding:1px 6px;border-radius:8px;margin-left:6px;color:#fff;white-space:nowrap}}
- .s-yy{{background:#1a8f43}} .s-dg{{background:#e08a00}} .s-zj{{background:#888}} .s-ot{{background:#999}} .s-blue{{background:#5b9bd5}}
+ .s-yy{{background:#1a8f43}} .s-dg{{background:#e08a00}} .s-zj{{background:#888}} .s-ot{{background:#999}} .s-blue{{background:#5b9bd5}} .s-green{{background:#d7f2e3;color:#0f7a45}}
  .ms{{position:relative;display:inline-block}}
  .ms>summary{{cursor:pointer;font-size:14px;list-style:none;padding:6px 24px 6px 8px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#000;white-space:nowrap}}
  .ms[open]>summary{{border-color:#2563eb}}
@@ -496,15 +503,18 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 function filterSb(){{
   var mn=parseFloat((document.getElementById('sb_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
   var mx=parseFloat((document.getElementById('sb_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
-  var ty=(document.getElementById('sb_ftype')||{{}}).value||'';
   var dr=(document.getElementById('sb_fdoor')||{{}}).value||'';
+  var tset={{}}; document.querySelectorAll('.sb_t:checked').forEach(function(c){{ tset[c.value]=1; }});
+  var tkeys=Object.keys(tset); var tn=tkeys.length;
+  var tsum=document.getElementById('sb_tsum'); if(tsum) tsum.textContent='类型：'+(tn?('已选 '+tn+' 个'):'全部');
   var dset={{}}; document.querySelectorAll('.sb_d:checked').forEach(function(c){{ dset[c.value]=1; }});
   var n=Object.keys(dset).length;
   var sum=document.getElementById('sb_dsum'); if(sum) sum.textContent='行政区：'+(n?('已选 '+n+' 个'):'全部');
   document.querySelectorAll('#sblist .pditem').forEach(function(li){{
     var pmin=parseFloat(li.getAttribute('data-pmin'))||0, pmax=parseFloat(li.getAttribute('data-pmax'))||0;
     var okP=(pmax>=mn)&&(pmin<=mx);
-    var okT=!ty||li.getAttribute('data-type')===ty;
+    var tags=li.getAttribute('data-tags')||'';
+    var okT=!tn||tkeys.some(function(t){{ return tags.indexOf(t)>=0; }});
     var okD=!dr||(li.getAttribute('data-door')||'').indexOf(dr)>=0;
     var okA=!n||dset[li.getAttribute('data-d')];
     li.style.display=(okP&&okT&&okD&&okA)?'':'none';
@@ -698,7 +708,8 @@ renderCompare(); syncCompareButtons();
 document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
 ['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
 filterPd();
-['sb_fmin','sb_fmax','sb_ftype','sb_fdoor'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterSb); el.addEventListener('input', filterSb); }} }});
+['sb_fmin','sb_fmax','sb_fdoor'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterSb); el.addEventListener('input', filterSb); }} }});
+document.querySelectorAll('.sb_t').forEach(function(c){{ c.addEventListener('change', filterSb); }});
 document.querySelectorAll('.sb_d').forEach(function(c){{ c.addEventListener('change', filterSb); }});
 filterSb();
 </script>

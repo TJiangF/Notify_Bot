@@ -10,6 +10,7 @@ import requests
 
 API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getProjectList"
 NOTICE_API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getNotice"
+QNAJ_API = "https://zwdt.sh.gov.cn/smzy/shspacelife/bzf/getProjectList_qnaj"
 PD_API = "https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx/getProjectAndHouse.html"
 PD_PAGE = "https://pdrcgy.pudong.gov.cn/api/rcaj/fwcx.html?index=0"
 
@@ -172,6 +173,35 @@ def fetch_all():
     if errs:
         raise errs[-1]
     raise AuthError("未配置任何随申办 Cookie")
+
+
+def fetch_qnaj():
+    param = {"districtId": DISTRICT_ID, "doorType": "", "rentHigh": "", "rentLow": "",
+             "searchWord": "", "street": [], "supplyWay": "", "ringRdId": "", "orderBy": "", "isAsc": True}
+    ids = set()
+    page = 1
+    while True:
+        data = {"params": json.dumps({"pageNo": page, "pageSize": PAGE_SIZE, "param": param}, ensure_ascii=False)}
+        r = requests.post(QNAJ_API, headers=_headers(ACTIVE_COOKIE), data=data, timeout=25)
+        r.raise_for_status()
+        j = r.json()
+        if "data" not in j:
+            msg = str(j.get("message") or j.get("url") or j)
+            if "查询次数" in msg or "上限" in msg:
+                raise RateLimitError(msg)
+            raise AuthError(msg)
+        inner = j["data"]
+        if isinstance(inner, str):
+            inner = json.loads(inner)
+        d = inner["data"]
+        res = d.get("results", [])
+        for it in res:
+            ids.add(str(it.get("projectId")))
+        record_usage(1, len(res))
+        if page * d.get("pageSize", PAGE_SIZE) >= d.get("totalCount", 0):
+            break
+        page += 1
+    return ids
 
 
 def fetch_notice():
@@ -389,7 +419,8 @@ def record_usage(nreq=0, nrec=0, src="ssb"):
 REPORT_DIR = os.path.join(BASE_DIR, "data")
 
 
-def _map_ssb(items):
+def _map_ssb(items, qnaj_ids=None):
+    qn = qnaj_ids or set()
     return [{"id": r.get("projectId"), "name": r.get("projectName"),
              "district": r.get("districtName") or "未知", "online": r.get("onlineFlatNum") or 0,
              "total": r.get("totalFlatNum") or 0, "rent_low": r.get("rentLow"), "rent_high": r.get("rentHigh"),
@@ -397,7 +428,8 @@ def _map_ssb(items):
              "house_type": r.get("houseTypeName"), "door_type": r.get("rentDoorTypeName"),
              "supply_start": r.get("concentRateSupplyStartDay"), "supply_end": r.get("concentRateSupplyEndDay"),
              "accept_start": r.get("concentRateAcceptStartDay"), "accept_end": r.get("concentRateAcceptEndDay"),
-             "intro": r.get("projectIntroduction")} for r in (items or [])]
+             "intro": r.get("projectIntroduction"),
+             "qnaj": str(r.get("projectId")) in qn} for r in (items or [])]
 
 
 def _map_pd(items):
@@ -414,10 +446,10 @@ def _map_notice(items):
              "org": r.get("orgName"), "intro": r.get("introduction")} for r in (items or [])]
 
 
-def write_report(cur, pd, notice, daily=False):
+def write_report(cur, pd, notice, qnaj_ids=None, daily=False):
     try:
         snap = {"date": now_bj().strftime("%Y-%m-%d"), "generated_at": now_bj().isoformat(timespec="seconds"),
-                "ssb": _map_ssb(cur), "pd": _map_pd(pd), "notice": _map_notice(notice)}
+                "ssb": _map_ssb(cur, qnaj_ids), "pd": _map_pd(pd), "notice": _map_notice(notice)}
         os.makedirs(REPORT_DIR, exist_ok=True)
         json.dump(snap, open(os.path.join(REPORT_DIR, "current.json"), "w"), ensure_ascii=False)
         if daily:
@@ -714,6 +746,13 @@ def run_once(report=False):
         except Exception as e:
             print("预告抓取失败：", repr(e))
 
+    qnaj_ids = None
+    if cur_all is not None:
+        try:
+            qnaj_ids = fetch_qnaj()
+        except Exception as e:
+            print("青年安居抓取失败：", repr(e))
+
     recovered = False
     if cur_all is not None and clear_err(state, ERR_SB):
         recovered = True
@@ -800,7 +839,7 @@ def run_once(report=False):
     save_state(state)
 
     if report:
-        write_report(cur_all, pd, notice, daily=(bj.hour == 12))
+        write_report(cur_all, pd, notice, qnaj_ids, daily=(bj.hour == 12))
 
 
 def is_scheduled(bj):
