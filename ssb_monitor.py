@@ -769,8 +769,8 @@ def run_once(report=False):
         write_report(cur_all, pd, notice, daily=(bj.hour == 12))
 
 
-SCHED20_HOURS = set(range(8, 20))
-SCHED_POINT_HOURS = {20, 21, 22, 0}
+SCHED20_HOURS = set(range(8, 19))
+SCHED_POINT_HOURS = {19, 20, 21, 22, 0}
 
 
 def is_scheduled(bj):
