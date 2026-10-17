@@ -220,7 +220,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             supply = " ~ ".join([d for d in [dday(x.get("supply_start")), dday(x.get("supply_end"))] if d]) or "—"
             accept = " ~ ".join([d for d in [dday(x.get("accept_start")), dday(x.get("accept_end"))] if d]) or "—"
             sitems.append(
-                f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-tags="{esc(tags_attr)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
+                f'<li class="pditem" data-key="ssb:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-tags="{esc(tags_attr)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badges}'
                 f'<span class="pdkz">在线 {x["online"]} 套</span></span>'
                 f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
@@ -231,7 +231,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 f'<div class="pdcell"><b>供应</b>{esc(supply)}</div>'
                 f'<div class="pdcell"><b>受理</b>{esc(accept)}</div>'
                 f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
-                f'</div></div></li>')
+                f'</div><div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div></li>')
         ssb_items = "".join(sitems)
         pd = latest["pd"]
         metros = sorted({m.split("/")[0].strip() for x in pd for m in (x.get("metro") or []) if m})
@@ -279,7 +279,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
             badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
             pitems.append(
-                f'<li class="pditem" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
+                f'<li class="pditem" data-key="pd:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">可租 {x["kzts"]} 套</span></span>'
                 f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
@@ -291,7 +291,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 f'<div class="pdcell"><b>供应</b>{esc(x.get("supply_date")) or "—"}</div>'
                 f'<div class="pdcell"><b>发布</b>{esc(x.get("release_time")) or "—"}</div>'
                 f'<div class="pdcell"><b>户型</b>{esc(fylx) or "—"}</div>'
-                f'</div></div></li>')
+                f'</div><div class="cmts" data-key="pd:{esc(str(x.get("id")))}"></div></div></li>')
         pd_items = "".join(pitems)
         return ssb_filter, ssb_items, pd_filter, pd_items
 
@@ -417,6 +417,21 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .pdgrid{{display:block}}
  .pdcell{{display:block;font-size:13px;color:#333;line-height:1.9;word-break:break-all}}
  .pdcell b{{color:#999;font-weight:400;margin-right:6px;display:inline-block;min-width:44px}}
+ .cmts{{margin-top:10px;border-top:1px dashed #e6e8eb;padding-top:10px}}
+ .cmt-title{{font-size:12px;color:#8794a8;margin-bottom:6px}}
+ .cmt{{border:1px solid #eef0f3;border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fff}}
+ .cmt-meta{{font-size:11px;color:#a3adbd;margin-bottom:4px}}
+ .cmt-text{{font-size:13px;color:#333;white-space:pre-wrap;word-break:break-word}}
+ .cmt-imgs{{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}}
+ .cmt-imgs img{{width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid #eef0f3}}
+ .cmt-empty{{color:#a3adbd;font-size:12px;padding:6px 0}}
+ .cmt-form{{margin-top:8px}}
+ .cmt-form textarea{{width:100%;border:1px solid #d5dbe3;border-radius:8px;padding:8px;font-size:13px;box-sizing:border-box;resize:vertical;font-family:inherit}}
+ .cmt-row{{display:flex;align-items:center;gap:10px;margin-top:6px}}
+ .cmt-row input[type=file]{{font-size:12px;flex:1;min-width:0}}
+ .cmt-send{{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;white-space:nowrap}}
+ .cmt-send:disabled{{opacity:.6;cursor:default}}
+ .cmt-hint{{font-size:12px;color:#e11d48;margin-top:4px}}
  @media (max-width:640px){{
    .wrap{{padding:12px}}
    h1{{font-size:19px}}
@@ -705,7 +720,44 @@ document.addEventListener('drop', function(e){{
 function toggleCompare(){{ var p=document.getElementById('cmpPanel'); if(p) p.classList.toggle('open'); }}
 function clearCompare(){{ compareList=[]; afterCmpChange(); }}
 renderCompare(); syncCompareButtons();
-document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{ h.parentNode.classList.toggle('open'); }}); }});
+function jesc(t){{ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }}
+function loadComments(c){{
+  if(!c || c.dataset.loaded) return;
+  c.dataset.loaded='1';
+  var key=c.getAttribute('data-key');
+  c.innerHTML='<div class="cmt-title">评论</div><div class="cmt-empty">加载中…</div>';
+  fetch('/api/comments?key='+encodeURIComponent(key)).then(function(r){{return r.json();}}).then(function(list){{
+    renderComments(c, key, list||[]);
+  }}).catch(function(){{ renderComments(c, key, []); }});
+}}
+function renderComments(c, key, list){{
+  var h='<div class="cmt-title">评论 '+list.length+'</div>';
+  if(!list.length) h+='<div class="cmt-empty">还没有评论，来写第一条吧</div>';
+  list.forEach(function(cm){{
+    h+='<div class="cmt"><div class="cmt-meta">'+(cm.time||'')+'</div>';
+    if(cm.text) h+='<div class="cmt-text">'+jesc(cm.text)+'</div>';
+    if(cm.images&&cm.images.length){{ h+='<div class="cmt-imgs">'; cm.images.forEach(function(im){{ h+='<a href="/uploads/'+encodeURIComponent(im)+'" target="_blank"><img src="/uploads/'+encodeURIComponent(im)+'" loading="lazy"></a>'; }}); h+='</div>'; }}
+    h+='</div>';
+  }});
+  c.innerHTML=h;
+  var form=document.createElement('div'); form.className='cmt-form';
+  form.innerHTML='<textarea rows="2" placeholder="写点对这套房源的描述 / 看房感受…"></textarea><div class="cmt-row"><input type="file" accept="image/*" multiple><button type="button" class="cmt-send">发布</button></div><div class="cmt-hint"></div>';
+  c.appendChild(form);
+  var ta=form.querySelector('textarea'), fi=form.querySelector('input[type=file]'), btn=form.querySelector('.cmt-send'), hint=form.querySelector('.cmt-hint');
+  btn.addEventListener('click', function(){{
+    if(!ta.value.trim() && !fi.files.length){{ hint.textContent='请输入文字或选择图片'; return; }}
+    var fd=new FormData(); fd.append('key',key); fd.append('text',ta.value);
+    for(var i=0;i<fi.files.length;i++) fd.append('images', fi.files[i]);
+    btn.disabled=true; hint.textContent='发布中…';
+    fetch('/api/comment',{{method:'POST',body:fd}}).then(function(r){{return r.json();}}).then(function(res){{
+      if(res&&res.ok){{ c.dataset.loaded=''; loadComments(c); }} else {{ btn.disabled=false; hint.textContent=(res&&res.msg)||'发布失败'; }}
+    }}).catch(function(){{ btn.disabled=false; hint.textContent='发布失败'; }});
+  }});
+}}
+document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{
+  var item=h.parentNode; item.classList.toggle('open');
+  if(item.classList.contains('open')){{ var c=item.querySelector('.cmts'); if(c) loadComments(c); }}
+}}); }});
 ['pd_fmin','pd_fmax','pd_fmetro','pd_fstatus','pd_ffy'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterPd); el.addEventListener('input', filterPd); }} }});
 filterPd();
 ['sb_fmin','sb_fmax','sb_fdoor'].forEach(function(id){{ var el=document.getElementById(id); if(el){{ el.addEventListener('change', filterSb); el.addEventListener('input', filterSb); }} }});

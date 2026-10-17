@@ -1,9 +1,11 @@
 import os
 import sys
 import json
+import uuid
 from datetime import datetime, timezone, timedelta
-from fastapi import FastAPI, Request, Form, Query
+from fastapi import FastAPI, Request, Form, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +25,60 @@ USAGE_PD = os.path.join(DATA_DIR, "usage_pd.json")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET)
+
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+COMMENTS_FILE = os.path.join(DATA_DIR, "comments.json")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+def load_comments():
+    if os.path.exists(COMMENTS_FILE):
+        try:
+            return json.load(open(COMMENTS_FILE))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_comments(d):
+    try:
+        json.dump(d, open(COMMENTS_FILE, "w"), ensure_ascii=False)
+    except Exception:
+        pass
+
+
+@app.get("/api/comments")
+def api_comments(key: str = ""):
+    return load_comments().get(key, [])
+
+
+@app.post("/api/comment")
+async def api_comment(key: str = Form(...), text: str = Form(""), images: list[UploadFile] = File(default=[])):
+    text = (text or "").strip()
+    imgs = []
+    for uf in (images or []):
+        if not uf or not getattr(uf, "filename", ""):
+            continue
+        ext = os.path.splitext(uf.filename)[1].lower()
+        if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"):
+            ext = ".jpg"
+        try:
+            data = await uf.read()
+        except Exception:
+            continue
+        if not data or len(data) > 8 * 1024 * 1024:
+            continue
+        name = uuid.uuid4().hex + ext
+        with open(os.path.join(UPLOAD_DIR, name), "wb") as f:
+            f.write(data)
+        imgs.append(name)
+    if not text and not imgs:
+        return {"ok": False, "msg": "请输入文字或选择图片"}
+    c = load_comments()
+    c.setdefault(key, []).append({"time": _now().strftime("%Y-%m-%d %H:%M"), "text": text[:2000], "images": imgs})
+    save_comments(c)
+    return {"ok": True}
 
 
 def _now():
