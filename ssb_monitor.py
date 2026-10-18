@@ -180,6 +180,32 @@ def fetch_all():
     raise AuthError("未配置任何随申办 Cookie")
 
 
+def _ping_cookie(ck):
+    """单次最小访问，仅用于备用账号保活（不翻页、不取预告/青年）"""
+    param = {"districtId": "", "doorType": "", "rentHigh": "", "rentLow": "",
+             "searchWord": "", "street": [], "supplyWay": "", "ringRdId": "", "orderBy": "", "isAsc": True}
+    data = {"params": json.dumps({"pageNo": 1, "pageSize": 1, "param": param}, ensure_ascii=False)}
+    r = requests.post(API, headers=_headers(ck), data=data, timeout=20)
+    r.raise_for_status()
+    j = r.json()
+    record_usage(1, 0)
+    return "data" in j
+
+
+def keepalive_backups():
+    """对非当前活跃账号各做一次最小访问，保持会话不过期"""
+    for ck in SB_COOKIES:
+        if ck == ACTIVE_COOKIE:
+            continue
+        try:
+            if _ping_cookie(ck):
+                print("备用账号保活 OK")
+            else:
+                print("备用账号保活：会话可能失效（被要求登录）")
+        except Exception as e:
+            print("备用账号保活失败：", type(e).__name__, str(e)[:60])
+
+
 def fetch_qnaj():
     param = {"districtId": DISTRICT_ID, "doorType": "", "rentHigh": "", "rentLow": "",
              "searchWord": "", "street": [], "supplyWay": "", "ringRdId": "", "orderBy": "", "isAsc": True}
@@ -741,6 +767,8 @@ def run_once(report=False):
     except Exception as e:
         print("随申办抓取失败：", repr(e))
         notify_err(state, ERR_SB, f"⚠️ 随申办获取数据失败：{type(e).__name__}: {e}")
+
+    keepalive_backups()
 
     pd = None
     pd_configured = bool(PD_USER or PD_COOKIE)
