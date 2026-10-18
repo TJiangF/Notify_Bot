@@ -31,8 +31,24 @@ def _save():
         pass
 
 
-def geocode(addr, city="上海", cache_only=False):
-    """地址 -> {lng, lat} 或 None（结果缓存到 data/geocache.json）"""
+def _query(address, city="上海"):
+    try:
+        r = requests.get(
+            "https://restapi.amap.com/v3/geocode/geo",
+            params={"address": address, "city": city, "key": AMAP_WEB_KEY},
+            timeout=15,
+        )
+        j = r.json()
+        if j.get("status") == "1" and j.get("geocodes"):
+            lng, lat = [float(x) for x in j["geocodes"][0]["location"].split(",")]
+            return {"lng": lng, "lat": lat}
+    except Exception as e:
+        print("geocode 失败:", address, repr(e))
+    return None
+
+
+def geocode(addr, district="", city="上海", cache_only=False):
+    """地址 -> {lng, lat} 或 None（带区上下文提高准确率；结果缓存到 data/geocache.json）"""
     addr = (addr or "").strip()
     if not addr:
         return None
@@ -41,31 +57,28 @@ def geocode(addr, city="上海", cache_only=False):
         return d[addr]
     if cache_only:
         return None
-    try:
-        r = requests.get(
-            "https://restapi.amap.com/v3/geocode/geo",
-            params={"address": addr, "city": city, "key": AMAP_WEB_KEY},
-            timeout=15,
-        )
-        j = r.json()
-        if j.get("status") == "1" and j.get("geocodes"):
-            loc = j["geocodes"][0]["location"]  # "lng,lat"
-            lng, lat = [float(x) for x in loc.split(",")]
-            d[addr] = {"lng": lng, "lat": lat}
+    variants = [addr]
+    if "上海" not in addr:
+        if district:
+            variants.insert(0, f"上海市{district}{addr}")
+        variants.append(f"上海市{addr}")
+    for v in variants:
+        c = _query(v)
+        if c:
+            d[addr] = c
             _save()
-            return d[addr]
-    except Exception as e:
-        print("geocode 失败:", addr, repr(e))
+            return c
     d[addr] = None
     _save()
     return None
 
 
-def build(addresses):
-    """批量地理编码（首次构建缓存用）"""
-    ori = 0
-    for a in addresses:
-        if geocode(a) is None:
-            ori += 1
+def build(items):
+    """批量地理编码（items: [(addr, district)] 或 [addr]）"""
+    fail = 0
+    for it in items:
+        a, dist = (it[0], it[1]) if isinstance(it, (tuple, list)) else (it, "")
+        if geocode(a, district=dist) is None:
+            fail += 1
         time.sleep(0.05)
-    print(f"完成：{len(addresses)} 个地址，失败 {ori}")
+    print(f"完成：{len(items)} 个地址，失败 {fail}")

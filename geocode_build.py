@@ -10,16 +10,16 @@ import geocode  # noqa: E402
 
 def main():
     cur = report.load_current()
-    addrs = set()
+    seen = {}
     for x in cur.get("ssb", []):
         if x.get("addr"):
-            addrs.add(x["addr"])
+            seen[x["addr"]] = x.get("district") or ""
     for x in cur.get("pd", []):
         if x.get("addr"):
-            addrs.add(x["addr"])
-    addrs = sorted(addrs)
-    print("待地理编码地址数:", len(addrs))
-    geocode.build(addrs)
+            seen.setdefault(x["addr"], "浦东新区")
+    items = list(seen.items())
+    print("待地理编码地址数:", len(items))
+    geocode.build(items)
 
 
 if __name__ == "__main__":

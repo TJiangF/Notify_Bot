@@ -77,7 +77,7 @@ def api_nearby(q: str = "", n: int = 10):
 
     def add(items, src, valkey, rentf):
         for x in items:
-            c = geocode.geocode(x.get("addr"))
+            c = geocode.geocode(x.get("addr"), district=x.get("district", ""))
             if not c:
                 continue
             h = {"name": x.get("name"), "addr": x.get("addr"), "src": src,
