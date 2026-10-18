@@ -928,7 +928,11 @@ function renderMapList(hs){{
   }});
   el.innerHTML=h;
 }}
-window.addEventListener('load', function(){{ initAmap(); }});
+window.addEventListener('load', function(){{
+  initAmap();
+  var m=(location.search.match(/[?&]q=([^&]*)/));
+  if(m){{ document.getElementById('map_q').value=decodeURIComponent(m[1]); doFind(); }}
+}});
 </script>
 </body></html>"""
 
