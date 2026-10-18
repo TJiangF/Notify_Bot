@@ -75,7 +75,11 @@ def api_nearby(q: str = "", n: int = 10, lng: float = 0.0, lat: float = 0.0):
     if lng and lat:
         origin = {"lng": lng, "lat": lat}
     elif q:
-        origin = geocode.geocode(q)
+        tips = geocode.suggest(q)
+        if tips:
+            origin = {"lng": tips[0]["lng"], "lat": tips[0]["lat"]}
+        else:
+            origin = geocode.geocode(q)
     else:
         return {"ok": False, "msg": "请输入地址"}
     if not origin:
