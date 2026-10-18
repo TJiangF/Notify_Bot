@@ -32,18 +32,25 @@ def _save():
 
 
 def _query(address, city="上海"):
-    try:
-        r = requests.get(
-            "https://restapi.amap.com/v3/geocode/geo",
-            params={"address": address, "city": city, "key": AMAP_WEB_KEY},
-            timeout=15,
-        )
-        j = r.json()
-        if j.get("status") == "1" and j.get("geocodes"):
-            lng, lat = [float(x) for x in j["geocodes"][0]["location"].split(",")]
-            return {"lng": lng, "lat": lat}
-    except Exception as e:
-        print("geocode 失败:", address, repr(e))
+    for attempt in range(4):
+        try:
+            r = requests.get(
+                "https://restapi.amap.com/v3/geocode/geo",
+                params={"address": address, "city": city, "key": AMAP_WEB_KEY},
+                timeout=15,
+            )
+            j = r.json()
+            if j.get("status") == "1" and j.get("geocodes"):
+                lng, lat = [float(x) for x in j["geocodes"][0]["location"].split(",")]
+                return {"lng": lng, "lat": lat}
+            info = j.get("info", "")
+            if "EXCEEDED" in info or "QUOTA" in info or "LIMIT" in info:
+                time.sleep(0.6 * (attempt + 1))
+                continue
+            return None
+        except Exception as e:
+            print("geocode 失败:", address, repr(e))
+            time.sleep(0.6 * (attempt + 1))
     return None
 
 
@@ -61,7 +68,9 @@ def geocode(addr, district="", city="上海", cache_only=False):
     if "上海" not in addr:
         if district:
             variants.insert(0, f"上海市{district}{addr}")
-        variants.append(f"上海市{addr}")
+        v2 = f"上海市{addr}"
+        if v2 not in variants:
+            variants.append(v2)
     for v in variants:
         c = _query(v)
         if c:
@@ -80,5 +89,5 @@ def build(items):
         a, dist = (it[0], it[1]) if isinstance(it, (tuple, list)) else (it, "")
         if geocode(a, district=dist) is None:
             fail += 1
-        time.sleep(0.05)
+        time.sleep(0.2)
     print(f"完成：{len(items)} 个地址，失败 {fail}")
