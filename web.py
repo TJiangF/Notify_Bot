@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import uuid
+import math
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -12,6 +13,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import report  # noqa: E402
 import config as cfgmod  # noqa: E402
+import geocode  # noqa: E402
 
 ADMIN_PATH = os.environ.get("SSB_ADMIN_PATH", "/admin")
 ADMIN_PW = os.environ.get("SSB_ADMIN_PASSWORD", "change-me")
@@ -51,6 +53,43 @@ def save_comments(d):
 @app.get("/api/comments")
 def api_comments(key: str = ""):
     return load_comments().get(key, [])
+
+
+def _hav_m(a, b):
+    R = 6371000.0
+    lat1, lng1 = math.radians(a["lat"]), math.radians(a["lng"])
+    lat2, lng2 = math.radians(b["lat"]), math.radians(b["lng"])
+    h = (math.sin((lat2 - lat1) / 2) ** 2
+         + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2)
+    return int(2 * R * math.asin(math.sqrt(h)))
+
+
+@app.get("/api/nearby")
+def api_nearby(q: str = "", n: int = 10):
+    q = (q or "").strip()
+    if not q:
+        return {"ok": False, "msg": "请输入地址"}
+    origin = geocode.geocode(q)
+    if not origin:
+        return {"ok": False, "msg": "地址解析失败，换个更常见的地址试试"}
+    cur = report.load_current()
+    houses = []
+
+    def add(items, src, valkey, rentf):
+        for x in items:
+            c = geocode.geocode(x.get("addr"))
+            if not c:
+                continue
+            h = {"name": x.get("name"), "addr": x.get("addr"), "src": src,
+                 "lng": c["lng"], "lat": c["lat"], "val": x.get(valkey) or 0,
+                 "rent": rentf(x), "id": x.get("id")}
+            h["dist"] = _hav_m(origin, c)
+            houses.append(h)
+
+    add(cur.get("ssb", []), "随申办", "online", lambda x: f'{x.get("rent_low")}~{x.get("rent_high")}元')
+    add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "")
+    houses.sort(key=lambda h: h["dist"])
+    return {"ok": True, "origin": origin, "houses": houses[:max(1, min(int(n), 50))]}
 
 
 @app.post("/api/comment")
