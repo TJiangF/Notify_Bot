@@ -62,7 +62,8 @@ PD_PROJECTS_KEY = "__pd_projects__"
 HEARTBEAT_HOURS = set(range(8, 21)) | {22}
 QUIET_START, QUIET_END = 0, 8
 SCHED_START, SCHED_END, SCHED_EXTRA = 8, 19, {20, 21, 22, 0}
-SCHED_STEP = 10
+SCHED_STEP = 20
+REPORT_START, REPORT_END = 8, 23
 
 try:
     sys.path.insert(0, BASE_DIR)
@@ -86,8 +87,10 @@ try:
     QUIET_END = int(_c.get("quiet_end", 8))
     SCHED_START = int(_c.get("sched_start", 8))
     SCHED_END = int(_c.get("sched_end", 19))
-    SCHED_STEP = int(_c.get("sched_step", 10))
+    SCHED_STEP = int(_c.get("sched_step", 20))
     SCHED_EXTRA = set(int(h) for h in _c.get("sched_extra_hours", [20, 21, 22, 0]))
+    REPORT_START = int(_c.get("report_start", 8))
+    REPORT_END = int(_c.get("report_end", 23))
 except Exception:
     pass
 
@@ -857,14 +860,13 @@ def run_once(report=False):
 
 
 def is_scheduled(bj):
-    h, mi = bj.hour, bj.minute
-    if SCHED_START <= h < SCHED_END and SCHED_STEP and mi % SCHED_STEP == 0:
-        return True
-    if h == SCHED_END and mi == 0:
-        return True
-    if h in SCHED_EXTRA and mi == 0:
-        return True
-    return False
+    """全天每 SCHED_STEP 分钟抓取一次（含夜间，用于会话保活）"""
+    return bool(SCHED_STEP) and bj.minute % SCHED_STEP == 0
+
+
+def is_report_time(bj):
+    """仅白天窗口的整点更新报表（夜间只保活、不刷新报表）"""
+    return REPORT_START <= bj.hour <= REPORT_END and bj.minute == 0
 
 
 def run_loop():
@@ -875,7 +877,7 @@ def run_loop():
             key = bj.strftime("%Y-%m-%d %H:%M")
             if key != last and is_scheduled(bj):
                 last = key
-                run_once(report=(bj.minute == 0))
+                run_once(report=is_report_time(bj))
                 print(bj.strftime("%Y-%m-%d %H:%M:%S"), "本轮完成", flush=True)
         except Exception as e:
             print("循环异常：", repr(e))
