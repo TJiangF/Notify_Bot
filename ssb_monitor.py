@@ -450,13 +450,25 @@ def _map_notice(items):
 
 def write_report(cur, pd, notice, qnaj_ids=None, daily=False):
     try:
+        path = os.path.join(REPORT_DIR, "current.json")
+        prev = {}
+        if os.path.exists(path):
+            try:
+                prev = json.load(open(path))
+            except Exception:
+                prev = {}
+        stale = {"ssb": cur is None, "pd": pd is None, "notice": notice is None}
         snap = {"date": now_bj().strftime("%Y-%m-%d"), "generated_at": now_bj().isoformat(timespec="seconds"),
-                "ssb": _map_ssb(cur, qnaj_ids), "pd": _map_pd(pd), "notice": _map_notice(notice)}
+                "ssb": _map_ssb(cur, qnaj_ids) if cur is not None else prev.get("ssb", []),
+                "pd": _map_pd(pd) if pd is not None else prev.get("pd", []),
+                "notice": _map_notice(notice) if notice is not None else prev.get("notice", []),
+                "stale": stale}
         os.makedirs(REPORT_DIR, exist_ok=True)
-        json.dump(snap, open(os.path.join(REPORT_DIR, "current.json"), "w"), ensure_ascii=False)
-        if daily:
+        json.dump(snap, open(path, "w"), ensure_ascii=False)
+        if daily and cur is not None:
             json.dump(snap, open(os.path.join(REPORT_DIR, snap["date"] + ".json"), "w"), ensure_ascii=False, indent=1)
-        print(f"已更新报表：随申办 {len(snap['ssb'])} / 明珠 {len(snap['pd'])} / 预告 {len(snap['notice'])}")
+        tag = "" if not any(stale.values()) else "（部分沿用上次有效数据：" + ",".join(k for k, v in stale.items() if v) + "）"
+        print(f"已更新报表：随申办 {len(snap['ssb'])} / 明珠 {len(snap['pd'])} / 预告 {len(snap['notice'])}{tag}")
     except Exception as e:
         print("写报表失败：", repr(e))
 
