@@ -350,6 +350,14 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 
     meta = f'<meta http-equiv="refresh" content="{auto_refresh}">' if auto_refresh else ""
 
+    _st = latest.get("stale") or {}
+    _names = [n for n, k in (("随申办", "ssb"), ("明珠在线", "pd"), ("供应预告", "notice")) if _st.get(k)]
+    if _names:
+        stale_banner = (f'<div class="stalebar">⚠️ 最近一次抓取未成功，'
+                        f'{"、".join(_names)}数据为上一次有效值（{esc(latest.get("generated_at", ""))[:16]}）。</div>')
+    else:
+        stale_banner = ""
+
     return f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">{meta}
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -369,6 +377,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .wrap{{flex:1;min-width:0;max-width:1000px;margin:0 auto;padding:24px}}
  h1{{font-size:22px;margin:0 0 4px}}
  .sub{{color:#666;font-size:14px;margin:6px 0 18px;line-height:1.9}}
+ .stalebar{{background:#fff7e6;border:1px solid #ffd591;color:#ad6800;border-radius:8px;padding:9px 12px;font-size:13px;margin:-8px 0 16px}}
  .sub select{{padding:4px 8px;border:1px solid #ccc;border-radius:6px;font-size:14px}}
  .cards{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}}
  .card{{background:#fff;border-radius:10px;padding:14px 18px;flex:1;min-width:150px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
@@ -516,7 +525,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 </div></div>
 <div class="wrap">
 <h1 id="sec-top">上海房源变化报表</h1>
-<div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每 30 分钟更新，页面每 30 分钟自动刷新</div></div>
+<div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每 20 分钟更新，页面定时自动刷新</div></div>
+{stale_banner}
 <div class="cards">
  <div class="card"><div class="n">{c_ssb}</div><div class="l">随申办 项目数</div></div>
  <div class="card"><div class="n">{c_ssb_online}</div><div class="l">随申办 在线房源数</div></div>
