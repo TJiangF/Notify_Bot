@@ -82,6 +82,39 @@ def geocode(addr, district="", city="上海", cache_only=False):
     return None
 
 
+def suggest(keywords, city="上海"):
+    """输入提示（POI+地址），返回 [{name,district,addr,lng,lat}]"""
+    keywords = (keywords or "").strip()
+    if not keywords:
+        return []
+    try:
+        r = requests.get(
+            "https://restapi.amap.com/v3/assistant/inputtips",
+            params={"keywords": keywords, "city": city, "citylimit": "true", "key": AMAP_WEB_KEY},
+            timeout=10,
+        )
+        j = r.json()
+    except Exception as e:
+        print("inputtips 失败:", keywords, repr(e))
+        return []
+    out = []
+    for t in j.get("tips", []) or []:
+        loc = t.get("location") or ""
+        if "," not in loc:
+            continue
+        try:
+            lng, lat = [float(x) for x in loc.split(",")]
+        except Exception:
+            continue
+        name = t.get("name") or ""
+        if not name:
+            continue
+        out.append({"name": name, "district": t.get("district") or "",
+                    "addr": t.get("address") or t.get("district") or "",
+                    "lng": lng, "lat": lat})
+    return out
+
+
 def build(items):
     """批量地理编码（items: [(addr, district)] 或 [addr]）"""
     fail = 0

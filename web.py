@@ -64,12 +64,20 @@ def _hav_m(a, b):
     return int(2 * R * math.asin(math.sqrt(h)))
 
 
+@app.get("/api/geosuggest")
+def api_geosuggest(q: str = ""):
+    return {"ok": True, "items": geocode.suggest(q)}
+
+
 @app.get("/api/nearby")
-def api_nearby(q: str = "", n: int = 10):
+def api_nearby(q: str = "", n: int = 10, lng: float = 0.0, lat: float = 0.0):
     q = (q or "").strip()
-    if not q:
+    if lng and lat:
+        origin = {"lng": lng, "lat": lat}
+    elif q:
+        origin = geocode.geocode(q)
+    else:
         return {"ok": False, "msg": "请输入地址"}
-    origin = geocode.geocode(q)
     if not origin:
         return {"ok": False, "msg": "地址解析失败，换个更常见的地址试试"}
     cur = report.load_current()
