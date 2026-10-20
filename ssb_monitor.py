@@ -45,6 +45,7 @@ KEYWORDS = [k.strip() for k in os.environ.get(
 STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ACCOUNT_FILE = os.path.join(BASE_DIR, "data", "sb_account.json")
 FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
 SUPPRESS_PUSH = False
 
@@ -170,15 +171,36 @@ def _fetch_all_cookie(ck):
 def fetch_all():
     global ACTIVE_COOKIE
     errs = []
-    for ck in SB_COOKIES:
+    n = len(SB_COOKIES)
+    acct = read_account()
+    try:
+        pref = int(acct.get("preferred", 0)) % n if n else 0
+    except Exception:
+        pref = 0
+    order = [pref] + [i for i in range(n) if i != pref]
+    ok = acct.get("ok")
+    if not isinstance(ok, dict):
+        ok = {}
+    active = acct.get("active", 0)
+    if not isinstance(active, int):
+        active = 0
+    for idx in order:
+        ck = SB_COOKIES[idx]
         try:
             out = _fetch_all_cookie(ck)
             if ck != ACTIVE_COOKIE:
-                print("随申办：已切换到备用账号")
+                print("随申办：已切换到账号", idx + 1)
             ACTIVE_COOKIE = ck
+            active = idx
+            ok[str(idx)] = True
+            write_account({"preferred": pref, "active": active, "ok": ok,
+                           "checked_at": now_bj().isoformat(timespec="seconds")})
             return out
         except (RateLimitError, AuthError) as e:
+            ok[str(idx)] = False
             errs.append(e)
+            write_account({"preferred": pref, "active": active, "ok": ok,
+                           "checked_at": now_bj().isoformat(timespec="seconds")})
             continue
     if errs:
         raise errs[-1]
@@ -414,6 +436,23 @@ def save_state(s):
         json.dump(s, f, ensure_ascii=False, indent=2)
 
 
+def read_account():
+    try:
+        if os.path.exists(ACCOUNT_FILE):
+            return json.load(open(ACCOUNT_FILE))
+    except Exception:
+        pass
+    return {}
+
+
+def write_account(d):
+    try:
+        os.makedirs(os.path.dirname(ACCOUNT_FILE), exist_ok=True)
+        json.dump(d, open(ACCOUNT_FILE, "w"), ensure_ascii=False)
+    except Exception:
+        pass
+
+
 def project_items(state):
     return {k: v for k, v in state.items() if not str(k).startswith("__")}
 
@@ -445,19 +484,69 @@ def _kw_map(cur_all, word):
     return m
 
 
-def project_snapshot(cur_all):
+def _pd_kw_map(pd_items, word):
+    m = {}
+    for it in pd_items or []:
+        name = it.get("villageProjectName") or it.get("name") or ""
+        if word in name:
+            pid = str(it.get("projectId") or it.get("id"))
+            if ("pd:" + pid) in IGNORE:
+                continue
+            kz = it.get("kzts")
+            if kz is None:
+                kz = 0
+            m[pid] = {"online": kz, "name": name}
+    return m
+
+
+def _pd_projects(pd_items):
+    m = {}
+    for it in pd_items or []:
+        pid = str(it.get("projectId") or it.get("id"))
+        if ("pd:" + pid) in IGNORE:
+            continue
+        name = it.get("villageProjectName") or it.get("name") or ""
+        kz = it.get("kzts")
+        m[pid] = {"name": name, "kzts": (0 if kz is None else kz)}
+    return m
+
+
+def project_snapshot(cur_all, pd_items=None):
     dists = {}
     for it in cur_all:
         d = it.get("districtName") or it.get("district") or "未知"
         dists[d] = dists.get(d, 0) + 1
-    words = [(r.get("word") or "").strip() for r in PUSH.get("keywords", []) if (r.get("word") or "").strip()]
-    return {"total": len(cur_all), "districts": dists,
-            "keywords": {w: _kw_map(cur_all, w) for w in words}}
+    ssb_words = [(r.get("word") or "").strip() for r in PUSH.get("keywords", []) if (r.get("word") or "").strip()]
+    pd_words = [(r.get("word") or "").strip() for r in PUSH.get("pd_keywords", []) if (r.get("word") or "").strip()]
+    return {
+        "total": len(cur_all),
+        "districts": dists,
+        "keywords": {w: _kw_map(cur_all, w) for w in ssb_words},
+        "pd": {
+            "total": len(pd_items or []),
+            "projects": _pd_projects(pd_items),
+            "keywords": {w: _pd_kw_map(pd_items, w) for w in pd_words},
+        },
+    }
 
 
-def build_push_digest(cur_all, baseline):
+def _rule_lines(rule, now, old):
+    new_ids = [p for p in now if p not in old]
+    gone_ids = [p for p in old if p not in now]
+    cnt_ids = [p for p in now if p in old and now[p]["online"] != old[p]["online"]]
+    sub = []
+    if rule.get("new") and new_ids:
+        sub.append("🆕 新增：" + "、".join(f"{now[p]['name']}（{now[p]['online']} 套）" for p in new_ids))
+    if rule.get("updown") and gone_ids:
+        sub.append("❌ 下架：" + "、".join(old[p]["name"] for p in gone_ids))
+    if rule.get("count") and cnt_ids:
+        sub.append("🔢 数量变动：" + "、".join(f"{now[p]['name']} {old[p]['online']}→{now[p]['online']}" for p in cnt_ids))
+    return sub
+
+
+def build_push_digest(cur_all, pd_items, baseline):
     """生成与上次心跳基线的对比摘要；返回 (lines, 本快照)"""
-    cur = project_snapshot(cur_all)
+    cur = project_snapshot(cur_all, pd_items)
     baseline = baseline or {}
     lines = []
     if PUSH.get("total_change"):
@@ -480,21 +569,45 @@ def build_push_digest(cur_all, baseline):
         w = (rule.get("word") or "").strip()
         if not w:
             continue
-        now = cur["keywords"].get(w, {})
-        old = (baseline.get("keywords") or {}).get(w, {})
-        new_ids = [p for p in now if p not in old]
-        gone_ids = [p for p in old if p not in now]
-        cnt_ids = [p for p in now if p in old and now[p]["online"] != old[p]["online"]]
-        sub = []
-        if rule.get("new") and new_ids:
-            sub.append("🆕 新增：" + "、".join(f"{now[p]['name']}（{now[p]['online']} 套）" for p in new_ids))
-        if rule.get("updown") and gone_ids:
-            sub.append("❌ 下架：" + "、".join(old[p]["name"] for p in gone_ids))
-        if rule.get("count") and cnt_ids:
-            sub.append("🔢 数量变动：" + "、".join(f"{now[p]['name']} {old[p]['online']}→{now[p]['online']}" for p in cnt_ids))
+        sub = _rule_lines(rule, cur["keywords"].get(w, {}), (baseline.get("keywords") or {}).get(w, {}))
         if sub:
-            lines.append(f"词条「{w}」：\n  " + "\n  ".join(sub))
+            lines.append(f"随申办·词条「{w}」：\n  " + "\n  ".join(sub))
+
+    if PUSH.get("pd_updown"):
+        oldp = (baseline.get("pd") or {}).get("projects") or {}
+        nowp = cur["pd"]["projects"]
+        new_ids = [p for p in nowp if p not in oldp]
+        gone_ids = [p for p in oldp if p not in nowp]
+        if new_ids:
+            lines.append("明珠在线·上架：" + "、".join(nowp[p]["name"] for p in new_ids))
+        if gone_ids:
+            lines.append("明珠在线·下架：" + "、".join(oldp[p]["name"] for p in gone_ids))
+    for rule in PUSH.get("pd_keywords", []):
+        if rule.get("ignore"):
+            continue
+        w = (rule.get("word") or "").strip()
+        if not w:
+            continue
+        sub = _rule_lines(rule, cur["pd"]["keywords"].get(w, {}), ((baseline.get("pd") or {}).get("keywords") or {}).get(w, {}))
+        if sub:
+            lines.append(f"明珠·词条「{w}」：\n  " + "\n  ".join(sub))
     return lines, cur
+
+
+def send_test_heartbeat(ssb_items, pd_items):
+    """按当前配置立即发送一条测试心跳（供后台按钮调用）"""
+    baseline = load_state().get(HB_BASELINE_KEY)
+    digest, snap = build_push_digest(ssb_items, pd_items, baseline)
+    lines = ["【房源监控 · 推送测试】", f"时间：{now_bj().strftime('%Y-%m-%d %H:%M')}",
+             f"随申办项目 {snap['total']} ｜ 明珠在线 {len(pd_items or [])}"]
+    if digest:
+        lines.append("\n━━ 变动 ━━")
+        lines += digest
+    else:
+        lines.append("（当前设置下暂无可推送的变动）")
+    msg = "\n".join(lines)
+    push(msg)
+    return msg
 
 
 def now_bj():
@@ -938,7 +1051,7 @@ def run_once(report=False):
     stamp = bj.strftime("%Y-%m-%d %H")
     if bj.hour in HEARTBEAT_HOURS and state.get(HEARTBEAT_KEY) != stamp and cur_all is not None:
         baseline = state.get(HB_BASELINE_KEY)
-        digest, cur_snap = build_push_digest(cur_all, baseline)
+        digest, cur_snap = build_push_digest(cur_all, pd, baseline)
         lines = ["【房源监控 · 定时心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}",
                  f"随申办项目 {cur_snap['total']} ｜ 明珠在线 {len(pd) if pd else 0} ｜ 供应预告 {len(notice) if notice else 0}"]
         if digest:
