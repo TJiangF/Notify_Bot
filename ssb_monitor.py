@@ -530,6 +530,10 @@ def project_snapshot(cur_all, pd_items=None):
     }
 
 
+def _drop_ignored(m):
+    return {p: v for p, v in (m or {}).items() if p not in IGNORE and ("pd:" + p) not in IGNORE}
+
+
 def _rule_lines(rule, now, old):
     new_ids = [p for p in now if p not in old]
     gone_ids = [p for p in old if p not in now]
@@ -569,12 +573,12 @@ def build_push_digest(cur_all, pd_items, baseline):
         w = (rule.get("word") or "").strip()
         if not w:
             continue
-        sub = _rule_lines(rule, cur["keywords"].get(w, {}), (baseline.get("keywords") or {}).get(w, {}))
+        sub = _rule_lines(rule, cur["keywords"].get(w, {}), _drop_ignored((baseline.get("keywords") or {}).get(w, {})))
         if sub:
             lines.append(f"随申办·词条「{w}」：\n  " + "\n  ".join(sub))
 
     if PUSH.get("pd_updown"):
-        oldp = (baseline.get("pd") or {}).get("projects") or {}
+        oldp = _drop_ignored((baseline.get("pd") or {}).get("projects") or {})
         nowp = cur["pd"]["projects"]
         new_ids = [p for p in nowp if p not in oldp]
         gone_ids = [p for p in oldp if p not in nowp]
@@ -588,7 +592,7 @@ def build_push_digest(cur_all, pd_items, baseline):
         w = (rule.get("word") or "").strip()
         if not w:
             continue
-        sub = _rule_lines(rule, cur["pd"]["keywords"].get(w, {}), ((baseline.get("pd") or {}).get("keywords") or {}).get(w, {}))
+        sub = _rule_lines(rule, cur["pd"]["keywords"].get(w, {}), _drop_ignored(((baseline.get("pd") or {}).get("keywords") or {}).get(w, {})))
         if sub:
             lines.append(f"明珠·词条「{w}」：\n  " + "\n  ".join(sub))
     return lines, cur
