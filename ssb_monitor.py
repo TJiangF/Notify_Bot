@@ -436,6 +436,8 @@ def _kw_map(cur_all, word):
         name = it.get("projectName") or it.get("name") or ""
         if word in name:
             pid = str(it.get("projectId") or it.get("id"))
+            if pid in IGNORE:
+                continue
             online = it.get("onlineFlatNum")
             if online is None:
                 online = it.get("online") or 0
