@@ -53,10 +53,13 @@ IGNORE = {
     "3025": "城家高级公寓（森兰洲海路地铁站店）",
 }
 
+PUSH = {"total_change": True, "district_change": False, "districts": [], "keywords": []}
+
 ERR_SB = "__err_sb__"
 ERR_PD = "__err_pd__"
 NOTICE_KEY = "__notices__"
 HEARTBEAT_KEY = "__last_heartbeat_hour__"
+HB_BASELINE_KEY = "__hb_baseline__"
 SCOPE_KEY = "__scope__"
 PD_PROJECTS_KEY = "__pd_projects__"
 HEARTBEAT_HOURS = set(range(8, 21)) | {22}
@@ -77,6 +80,8 @@ try:
         KEYWORDS = _c["keywords"]
     if _c.get("ignore"):
         IGNORE = _c["ignore"]
+    if isinstance(_c.get("push"), dict):
+        PUSH = _c["push"]
     if _c.get("district_id"):
         DISTRICT_ID = _c["district_id"]
     if _c.get("district_name"):
@@ -423,6 +428,67 @@ def is_keyword(name):
 
 def star(name):
     return "⭐" if is_keyword(name) else "・"
+
+
+def _kw_map(cur_all, word):
+    m = {}
+    for it in cur_all:
+        if word in (it.get("projectName") or ""):
+            m[str(it["projectId"])] = {"online": it.get("onlineFlatNum") or 0,
+                                       "name": it.get("projectName")}
+    return m
+
+
+def project_snapshot(cur_all):
+    dists = {}
+    for it in cur_all:
+        d = it.get("districtName") or "未知"
+        dists[d] = dists.get(d, 0) + 1
+    words = [(r.get("word") or "").strip() for r in PUSH.get("keywords", []) if (r.get("word") or "").strip()]
+    return {"total": len(cur_all), "districts": dists,
+            "keywords": {w: _kw_map(cur_all, w) for w in words}}
+
+
+def build_push_digest(cur_all, baseline):
+    """生成与上次心跳基线的对比摘要；返回 (lines, 本快照)"""
+    cur = project_snapshot(cur_all)
+    baseline = baseline or {}
+    lines = []
+    if PUSH.get("total_change"):
+        old = baseline.get("total")
+        if old is None:
+            lines.append(f"随申办总项目数：{cur['total']} 个")
+        elif old != cur["total"]:
+            lines.append(f"随申办总项目数：{old} → {cur['total']}（{cur['total'] - old:+d}）")
+    if PUSH.get("district_change"):
+        for d in PUSH.get("districts", []):
+            now = cur["districts"].get(d, 0)
+            old = (baseline.get("districts") or {}).get(d)
+            if old is None:
+                lines.append(f"{d}：{now} 个项目")
+            elif old != now:
+                lines.append(f"{d}：{old} → {now}（{now - old:+d}）")
+    for rule in PUSH.get("keywords", []):
+        if rule.get("ignore"):
+            continue
+        w = (rule.get("word") or "").strip()
+        if not w:
+            continue
+        now = cur["keywords"].get(w, {})
+        old = (baseline.get("keywords") or {}).get(w, {})
+        new_ids = [p for p in now if p not in old]
+        gone_ids = [p for p in old if p not in now]
+        cnt_ids = [p for p in now if p in old and now[p]["online"] != old[p]["online"]]
+        sub = []
+        if rule.get("new") and new_ids:
+            sub.append("🆕 新增：" + "、".join(f"{now[p]['name']}（{now[p]['online']} 套）" for p in new_ids))
+        if rule.get("updown") and gone_ids:
+            sub.append("❌ 下架：" + "、".join(old[p]["name"] for p in gone_ids))
+        if rule.get("count") and cnt_ids:
+            sub.append("🔢 数量变动：" + "、".join(f"{now[p]['name']} {old[p]['online']}→{now[p]['online']}" for p in cnt_ids))
+        if sub:
+            lines.append(f"词条「{w}」：\n  " + "\n  ".join(sub))
+    return lines, cur
 
 
 def now_bj():
@@ -860,25 +926,24 @@ def run_once(report=False):
             change_sections += section("明珠在线", pd_lines)
         pd_update(state, pd)
 
-    if change_sections:
-        push("【房源监控 · 变动】" + change_sections)
-        print("已推送变动")
-    elif sb_baseline and pd_baseline:
+    if sb_baseline and pd_baseline:
         print("首次运行，建立基线")
 
     stamp = bj.strftime("%Y-%m-%d %H")
-    if bj.hour in HEARTBEAT_HOURS and state.get(HEARTBEAT_KEY) != stamp:
-        lines = ["【房源监控 · 定时心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}"]
-        if kw_cur:
-            lines += [section(f"随申办（{DISTRICT_NAME}·关键字）", sb_heartbeat_lines(kw_cur))]
-        if notice:
-            lines += [section("随申办·供应预告", notice_heartbeat_lines(notice))]
-        if pd:
-            lines += [section("明珠在线", pd_heartbeat_lines(pd))]
-        if kw_cur or pd or notice:
-            push("\n".join(lines), heartbeat=True)
-            state[HEARTBEAT_KEY] = stamp
-            print("整点心跳已推送:", stamp)
+    if bj.hour in HEARTBEAT_HOURS and state.get(HEARTBEAT_KEY) != stamp and cur_all is not None:
+        baseline = state.get(HB_BASELINE_KEY)
+        digest, cur_snap = build_push_digest(cur_all, baseline)
+        lines = ["【房源监控 · 定时心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}",
+                 f"随申办项目 {cur_snap['total']} ｜ 明珠在线 {len(pd) if pd else 0} ｜ 供应预告 {len(notice) if notice else 0}"]
+        if digest:
+            lines.append("\n━━ 变动 ━━")
+            lines += digest
+        else:
+            lines.append("（暂无可推送的变动）")
+        push("\n".join(lines), heartbeat=True)
+        state[HB_BASELINE_KEY] = cur_snap
+        state[HEARTBEAT_KEY] = stamp
+        print("整点心跳已推送:", stamp)
 
     state[SCOPE_KEY] = scope
     save_state(state)
