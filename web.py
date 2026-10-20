@@ -26,7 +26,7 @@ VISITS_FILE = os.path.join(DATA_DIR, "visits.json")
 USAGE_SB = os.path.join(DATA_DIR, "usage.json")
 USAGE_PD = os.path.join(DATA_DIR, "usage_pd.json")
 GEO_RATE_FILE = os.path.join(DATA_DIR, "georate.json")
-GEO_DAILY_LIMIT = int(os.environ.get("GEO_DAILY_LIMIT", "50"))
+GEO_DAILY_LIMIT = int(os.environ.get("GEO_DAILY_LIMIT", "100"))
 _RATE_LOCK = threading.Lock()
 
 app = FastAPI()
