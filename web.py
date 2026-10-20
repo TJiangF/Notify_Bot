@@ -160,6 +160,21 @@ def api_kwcount(w: str = ""):
     return {"ok": True, "count": len(items), "online": sum((x.get("online") or 0) for x in items)}
 
 
+@app.get("/api/kwitems")
+def api_kwitems(w: str = ""):
+    w = (w or "").strip()
+    cur = report.load_current()
+    ign = cfgmod.load().get("ignore", {}) or {}
+    items = []
+    for x in cur.get("ssb", []):
+        if w and w in (x.get("name") or ""):
+            pid = str(x.get("id"))
+            items.append({"id": pid, "name": x.get("name"), "online": x.get("online") or 0,
+                          "ignored": pid in ign})
+    items.sort(key=lambda a: -(a.get("online") or 0))
+    return {"ok": True, "count": len(items), "items": items}
+
+
 @app.post("/api/comment")
 async def api_comment(key: str = Form(...), text: str = Form(""), images: list[UploadFile] = File(default=[])):
     text = (text or "").strip()
@@ -237,18 +252,13 @@ def read_usage(path):
 
 
 def schedule_times(cfg):
+    step = int(cfg.get("sched_step", 20)) or 20
     out = []
-    st = int(cfg.get("sched_start", 8))
-    en = int(cfg.get("sched_end", 19))
-    step = int(cfg.get("sched_step", 10)) or 10
-    for h in range(st, en):
+    for h in range(24):
         m = 0
         while m < 60:
             out.append(f"{h:02d}:{m:02d}")
             m += step
-    out.append(f"{en:02d}:00")
-    for h in sorted(set(int(x) for x in cfg.get("sched_extra_hours", []))):
-        out.append(f"{h:02d}:00")
     return out
 
 
@@ -323,6 +333,10 @@ button:hover{background:#1d4ed8}
  .kwtbl input[type=text]{padding:6px 8px;font-size:13px}
  .kwcount{font-size:12px;color:#1a8f43;white-space:nowrap}
  .kwcount.warn{color:#dc2626;font-weight:600}
+ .kwitemsrow td{padding:0 6px 10px}
+ .kwitems{display:flex;flex-wrap:wrap;gap:6px 10px;text-align:left}
+ .kwitem{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#475467;background:#f2f6ff;border:1px solid #e3ecff;border-radius:6px;padding:3px 8px;cursor:pointer;white-space:nowrap}
+ .kwitem input{width:auto;margin:0}
  button.ghost{background:#fff;color:#2563eb;border:1px solid #bfd3ff}
  button.ghost:hover{background:#f2f6ff}
  button:disabled{opacity:.5;cursor:not-allowed}
@@ -337,6 +351,8 @@ def esc(s):
 ADMIN_PUSH_JS = """
 <script>
 var KW = (window.KW_INIT || []).slice();
+var IGN = {};
+(function(){ var ta=document.getElementById('ignore_ta'); if(ta){ try{ IGN=JSON.parse(ta.value||'{}')||{}; }catch(e){ IGN={}; } } })();
 function kwEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function renderKw(){
   var tb=document.getElementById('kwrows'); if(!tb) return;
@@ -351,18 +367,27 @@ function renderKw(){
       +'<td><span class="kwcount" id="kwc_'+i+'">—</span></td>'
       +'<td><button type="button" class="ghost kwdel" data-i="'+i+'">删除</button></td>';
     tb.appendChild(tr);
+    var tr2=document.createElement('tr'); tr2.className='kwitemsrow';
+    tr2.innerHTML='<td colspan="7"><div class="kwitems" id="kwi_'+i+'"></div></td>';
+    tb.appendChild(tr2);
   });
   document.getElementById('kwadd').disabled = KW.length>=10;
-  KW.forEach(function(r,i){ if((r.word||'').trim()) fetchKw(i); });
+  KW.forEach(function(r,i){ if((r.word||'').trim()) fetchItems(i); });
 }
-function fetchKw(i){
-  var w=(KW[i].word||'').trim(); var el=document.getElementById('kwc_'+i); if(!el) return;
-  if(!w){ el.textContent='—'; el.className='kwcount'; return; }
-  fetch('/api/kwcount?w='+encodeURIComponent(w)).then(function(r){return r.json();}).then(function(d){
-    var n=(d&&d.count)||0;
-    el.textContent = n+' 个项目' + (n>10?'（太宽泛，请修改）':'');
-    el.className = 'kwcount' + (n>10?' warn':'');
-  }).catch(function(){ el.textContent='—'; });
+function fetchItems(i){
+  var w=(KW[i].word||'').trim(); var box=document.getElementById('kwi_'+i); var cnt=document.getElementById('kwc_'+i);
+  if(!box) return;
+  if(!w){ box.innerHTML=''; if(cnt){cnt.textContent='—';cnt.className='kwcount';} return; }
+  fetch('/api/kwitems?w='+encodeURIComponent(w)).then(function(r){return r.json();}).then(function(d){
+    var items=(d&&d.items)||[];
+    if(cnt){ cnt.textContent=items.length+' 个项目'+(items.length>10?'（太宽泛，请修改）':''); cnt.className='kwcount'+(items.length>10?' warn':''); }
+    if(!items.length){ box.innerHTML='<span class="muted">（暂无命中）</span>'; return; }
+    box.innerHTML=items.map(function(it){
+      var pid=String(it.id);
+      var chk=(IGN[pid]!==undefined)?'checked':'';
+      return '<label class="kwitem"><input type="checkbox" class="kwignite" data-pid="'+kwEsc(pid)+'" data-name="'+kwEsc(it.name)+'" '+chk+'> '+kwEsc(it.name)+'（'+(it.online||0)+' 套）</label>';
+    }).join('');
+  }).catch(function(){ if(box) box.innerHTML='<span class="muted">（加载失败）</span>'; });
 }
 (function(){
   var tb=document.getElementById('kwrows');
@@ -370,7 +395,7 @@ function fetchKw(i){
     tb.addEventListener('input', function(e){
       var t=e.target; if(!t.classList.contains('kw')) return;
       var i=+t.getAttribute('data-i'); KW[i].word=t.value;
-      clearTimeout(t._t); t._t=setTimeout(function(){ fetchKw(i); }, 350);
+      clearTimeout(t._t); t._t=setTimeout(function(){ fetchItems(i); }, 350);
     });
     tb.addEventListener('change', function(e){
       var t=e.target; var i=+t.getAttribute('data-i');
@@ -378,6 +403,10 @@ function fetchKw(i){
       else if(t.classList.contains('kwup')) KW[i].updown=t.checked;
       else if(t.classList.contains('kwcnt')) KW[i].count=t.checked;
       else if(t.classList.contains('kwign')) KW[i].ignore=t.checked;
+      else if(t.classList.contains('kwignite')){
+        var pid=t.getAttribute('data-pid'), nm=t.getAttribute('data-name');
+        if(t.checked) IGN[pid]=nm; else delete IGN[pid];
+      }
     });
     tb.addEventListener('click', function(e){
       if(e.target.classList.contains('kwdel')){ KW.splice(+e.target.getAttribute('data-i'),1); renderKw(); }
@@ -395,6 +424,7 @@ function fetchKw(i){
                return {word:r.word.trim(), 'new':!!r['new'], updown:!!r.updown, count:!!r.count, ignore:!!r.ignore};
              }) };
     document.getElementById('push_json').value=JSON.stringify(pj);
+    var ta=document.getElementById('ignore_ta'); if(ta) ta.value=JSON.stringify(IGN,null,1);
   });
   renderKw();
 })();
@@ -488,28 +518,37 @@ def render_dashboard(request, msg=""):
 </section>
 
 <section>
-<h2>查询策略 · 今日点位（{len(times)} 次）</h2>
-<div style="margin:6px 0 14px">{time_tags}</div>
+<h2>查询策略</h2>
+<div class="muted" style="margin-bottom:12px">查询与推送是分开的：查询全天 24 小时按间隔进行（夜间也跑，用于会话保活）；推送只在下面「推送策略」的心跳整点触发。</div>
 <form method="post" action="{ADMIN_PATH}/save">
 <div class="row">
-  <div><label class="f">起始小时</label><input name="sched_start" value="{cfg.get('sched_start',8)}"></div>
-  <div><label class="f">结束小时（整点停）</label><input name="sched_end" value="{cfg.get('sched_end',19)}"></div>
-  <div><label class="f">间隔(分钟)</label><input name="sched_step" value="{cfg.get('sched_step',10)}"></div>
-  <div><label class="f">额外整点(逗号)</label><input name="sched_extra_hours" value="{extra}"></div>
+  <div><label class="f">查询间隔（分钟）</label><input name="sched_step" value="{cfg.get('sched_step',20)}"></div>
+  <div><label class="f">报表默认基线（几天前）</label><input name="default_base_days" value="{cfg.get('default_base_days',1)}"></div>
 </div>
+<div class="pushbox">
+  <div><b>主号</b>：每次查询全部数据（翻页 + 供应预告 + 青年安居）。</div>
+  <div><b>备号</b>：每次仅单次访问保活（不翻页、不取预告/青年）；主号失效时自动切换为备号全量查询。</div>
+  <div class="muted" style="margin-top:8px">今日查询点位（{len(times)} 次）：</div>
+  <div style="margin-top:6px">{time_tags}</div>
+</div>
+<input type="hidden" name="sched_start" value="{cfg.get('sched_start',8)}">
+<input type="hidden" name="sched_end" value="{cfg.get('sched_end',19)}">
+<input type="hidden" name="sched_extra_hours" value="{extra}">
+<input type="hidden" name="district_id" value="{cfg.get('district_id','')}">
+<input type="hidden" name="district_name" value="{cfg.get('district_name','全市')}">
+</section>
+
+<section>
+<h2 style="margin-top:22px">推送策略</h2>
+<div class="muted" style="margin-bottom:12px">推送按「心跳整点」触发：到点对比上次心跳，汇总下面「推送内容」里勾选的变动发送；异常（Cookie 失效、限流、恢复）为特殊情况即时推送。</div>
 <div class="row">
-  <div><label class="f">心跳小时（逗号，24时制）</label><input name="heartbeat_hours" value="{hb}"></div>
-  <div><label class="f">夜间静默起（时）</label><input name="quiet_start" value="{cfg.get('quiet_start',0)}"></div>
+  <div><label class="f">心跳整点（逗号，24 时制）</label><input name="heartbeat_hours" value="{hb}"></div>
+  <div><label class="f">夜间静默起（时，不推送）</label><input name="quiet_start" value="{cfg.get('quiet_start',0)}"></div>
   <div><label class="f">夜间静默止（时）</label><input name="quiet_end" value="{cfg.get('quiet_end',8)}"></div>
 </div>
-<div class="row">
-  <div><label class="f">报表默认基线（几天前）</label><input name="default_base_days" value="{cfg.get('default_base_days',1)}"></div>
-  <div><label class="f">监控区 ID（空=全市）</label><input name="district_id" value="{cfg.get('district_id','')}"></div>
-  <div><label class="f">监控区名称</label><input name="district_name" value="{cfg.get('district_name','全市')}"></div>
-</div>
+<div class="muted">特殊情况（Cookie 失效 / 查询限流 / 恢复）始终即时推送，不受内容勾选影响。</div>
 
-<h2 style="margin-top:22px">消息推送设置</h2>
-<div class="muted" style="margin:-2px 0 10px">推送以「定时心跳」为节奏：到心跳整点时，汇总下面勾选的变动内容发送；未勾选的类别不会推送。</div>
+<h2 style="margin-top:22px">推送内容</h2>
 <div class="row">
   <div><label class="f">企业微信 Webhook</label><input name="wecom_webhook" value="{cfg.get('wecom_webhook','')}"></div>
   <div><label class="f">Server酱 SendKey</label><input name="serverchan_key" value="{cfg.get('serverchan_key','')}"></div>
@@ -527,9 +566,9 @@ def render_dashboard(request, msg=""):
 
 <div class="pushbox">
   <div style="font-weight:600;margin-bottom:6px">随申办特定词条房源变动（最多 10 个）</div>
-  <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；右侧实时显示当前命中项目数，超过 10 个说明词条太宽泛，建议修改。</div>
+  <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；下方会逐条列出当前命中的项目，可单独勾选忽略。命中超过 10 个说明词条太宽泛，建议修改。</div>
   <table class="kwtbl">
-    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>忽略</th><th>当前命中</th><th></th></tr></thead>
+    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
     <tbody id="kwrows"></tbody>
   </table>
   <button type="button" id="kwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
@@ -538,7 +577,7 @@ def render_dashboard(request, msg=""):
 <input type="hidden" name="push_json" id="push_json">
 
 <details style="margin-top:10px"><summary class="muted">高级：忽略名单（项目ID→名称，JSON）</summary>
-<textarea name="ignore" rows="4">{ignore}</textarea></details>
+<textarea name="ignore" id="ignore_ta" rows="4">{ignore}</textarea></details>
 {(f'<div class="ok">{msg}</div>') if msg else ''}
 <p><button>保存配置</button> <span class="muted">保存后监控下一轮生效（≤按策略点位）</span></p>
 </form>
