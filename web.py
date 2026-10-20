@@ -219,7 +219,9 @@ def api_sb_status(request: Request, refresh: int = 0):
         active = int(acct.get("active", 0)) % n if n else 0
     except Exception:
         active = 0
-    accounts = [{"index": i, "name": f"账号{i+1}", "ok": bool(okmap.get(str(i))), "active": i == active}
+    accounts = [{"index": i, "name": f"账号{i+1}",
+                 "ok": (None if str(i) not in okmap else bool(okmap.get(str(i)))),
+                 "active": i == active}
                 for i in range(n)]
     return {"ok": True, "accounts": accounts, "active": active,
             "preferred": acct.get("preferred", 0), "checked_at": acct.get("checked_at", "")}
@@ -418,6 +420,7 @@ button:hover{background:#1d4ed8}
  .acctpill{display:inline-flex;align-items:center;gap:8px;border-radius:20px;padding:4px 10px;font-size:13px;border:1px solid}
  .acct-ok{background:#e8f7ee;color:#1a8f43;border-color:#b7e4c7}
  .acct-bad{background:#fdecec;color:#c0392b;border-color:#f5c2c0}
+ .acct-unk{background:#f2f4f7;color:#667085;border-color:#d0d5dd}
  .acctpill button{padding:2px 8px;font-size:12px}
  button.ghost{background:#fff;color:#2563eb;border:1px solid #bfd3ff}
  button.ghost:hover{background:#f2f6ff}
@@ -540,9 +543,10 @@ ADMIN_EXTRA_JS = """
     var accs=(d&&d.accounts)||[];
     if(!accs.length){ box.innerHTML='<span class="muted">（未配置账号）</span>'; return; }
     box.innerHTML=accs.map(function(a){
-      var cls=a.ok?'acct-ok':'acct-bad';
+      var cls=(a.ok===true)?'acct-ok':(a.ok===false?'acct-bad':'acct-unk');
+      var txt=(a.ok===true)?'可用':(a.ok===false?'失效':'未知');
       var tag=a.active?'（当前）':'';
-      return '<span class="acctpill '+cls+'">'+a.name+(a.ok?' 可用':' 失效')+tag+' <button type="button" class="ghost acctsw" data-i="'+a.index+'">切换</button></span>';
+      return '<span class="acctpill '+cls+'">'+a.name+' '+txt+tag+' <button type="button" class="ghost acctsw" data-i="'+a.index+'">切换</button></span>';
     }).join('');
     box.querySelectorAll('.acctsw').forEach(function(b){
       b.addEventListener('click', function(){
@@ -559,7 +563,7 @@ ADMIN_EXTRA_JS = """
       .catch(function(){ if(box) box.innerHTML='<span class="muted">（状态获取失败）</span>'; });
   }
   var rf=document.getElementById('acctrefresh'); if(rf) rf.addEventListener('click', function(){ loadAcct(1); });
-  loadAcct(0);
+  loadAcct(1);
 })();
 </script>
 """
