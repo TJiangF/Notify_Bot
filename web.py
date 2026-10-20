@@ -2,6 +2,9 @@ import os
 import sys
 import json
 import uuid
+import math
+import html
+import threading
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -12,6 +15,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import report  # noqa: E402
 import config as cfgmod  # noqa: E402
+import geocode  # noqa: E402
+import ssb_monitor as mon  # noqa: E402
 
 ADMIN_PATH = os.environ.get("SSB_ADMIN_PATH", "/admin")
 ADMIN_PW = os.environ.get("SSB_ADMIN_PASSWORD", "change-me")
@@ -22,6 +27,9 @@ DATA_DIR = os.path.join(BASE, "data")
 VISITS_FILE = os.path.join(DATA_DIR, "visits.json")
 USAGE_SB = os.path.join(DATA_DIR, "usage.json")
 USAGE_PD = os.path.join(DATA_DIR, "usage_pd.json")
+GEO_RATE_FILE = os.path.join(DATA_DIR, "georate.json")
+GEO_DAILY_LIMIT = int(os.environ.get("GEO_DAILY_LIMIT", "100"))
+_RATE_LOCK = threading.Lock()
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET)
@@ -51,6 +59,199 @@ def save_comments(d):
 @app.get("/api/comments")
 def api_comments(key: str = ""):
     return load_comments().get(key, [])
+
+
+def _hav_m(a, b):
+    R = 6371000.0
+    lat1, lng1 = math.radians(a["lat"]), math.radians(a["lng"])
+    lat2, lng2 = math.radians(b["lat"]), math.radians(b["lng"])
+    h = (math.sin((lat2 - lat1) / 2) ** 2
+         + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2)
+    return int(2 * R * math.asin(math.sqrt(h)))
+
+
+def _client_ip(request):
+    xr = request.headers.get("x-real-ip", "")
+    if xr:
+        return xr.strip()
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_take(ip):
+    """该 IP 今日计数 +1；超限返回 False"""
+    today = datetime.now(BJ).strftime("%Y-%m-%d")
+    with _RATE_LOCK:
+        d = {}
+        if os.path.exists(GEO_RATE_FILE):
+            try:
+                d = json.load(open(GEO_RATE_FILE))
+            except Exception:
+                d = {}
+        if d.get("date") != today:
+            d = {"date": today, "ips": {}}
+        ips = d.setdefault("ips", {})
+        n = int(ips.get(ip, 0))
+        if n >= GEO_DAILY_LIMIT:
+            return False
+        ips[ip] = n + 1
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            json.dump(d, open(GEO_RATE_FILE, "w"), ensure_ascii=False)
+        except Exception:
+            pass
+        return True
+
+
+def _rate_msg():
+    return f"今日使用次数过多（每个 IP 每天 {GEO_DAILY_LIMIT} 次），请明天再试"
+
+
+@app.get("/api/geosuggest")
+def api_geosuggest(request: Request, q: str = ""):
+    if not _rate_take(_client_ip(request)):
+        return {"ok": False, "msg": _rate_msg(), "items": []}
+    return {"ok": True, "items": geocode.suggest(q)}
+
+
+@app.get("/api/nearby")
+def api_nearby(request: Request, q: str = "", n: int = 10, lng: float = 0.0, lat: float = 0.0):
+    if not _rate_take(_client_ip(request)):
+        return {"ok": False, "msg": _rate_msg()}
+    q = (q or "").strip()
+    if lng and lat:
+        origin = {"lng": lng, "lat": lat}
+    elif q:
+        tips = geocode.suggest(q)
+        if tips:
+            origin = {"lng": tips[0]["lng"], "lat": tips[0]["lat"]}
+        else:
+            origin = geocode.geocode(q)
+    else:
+        return {"ok": False, "msg": "请输入地址"}
+    if not origin:
+        return {"ok": False, "msg": "地址解析失败，换个更常见的地址试试"}
+    cur = report.load_current()
+    houses = []
+
+    def add(items, src, valkey, rentf):
+        for x in items:
+            c = geocode.geocode(x.get("addr"), district=x.get("district", ""))
+            if not c:
+                continue
+            h = {"name": x.get("name"), "addr": x.get("addr"), "src": src,
+                 "lng": c["lng"], "lat": c["lat"], "val": x.get(valkey) or 0,
+                 "rent": rentf(x), "id": x.get("id")}
+            h["dist"] = _hav_m(origin, c)
+            houses.append(h)
+
+    add(cur.get("ssb", []), "随申办", "online", lambda x: f'{x.get("rent_low")}~{x.get("rent_high")}元')
+    add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "")
+    houses.sort(key=lambda h: h["dist"])
+    return {"ok": True, "origin": origin, "houses": houses[:max(1, min(int(n), 50))]}
+
+
+@app.get("/api/kwcount")
+def api_kwcount(w: str = ""):
+    w = (w or "").strip()
+    cur = report.load_current()
+    items = [x for x in cur.get("ssb", []) if w and w in (x.get("name") or "")]
+    return {"ok": True, "count": len(items), "online": sum((x.get("online") or 0) for x in items)}
+
+
+@app.get("/api/kwitems")
+def api_kwitems(w: str = ""):
+    w = (w or "").strip()
+    cur = report.load_current()
+    ign = cfgmod.load().get("ignore", {}) or {}
+    items = []
+    for x in cur.get("ssb", []):
+        if w and w in (x.get("name") or ""):
+            pid = str(x.get("id"))
+            items.append({"id": pid, "name": x.get("name"), "online": x.get("online") or 0,
+                          "ignored": pid in ign})
+    items.sort(key=lambda a: -(a.get("online") or 0))
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@app.get("/api/pditems")
+def api_pditems(w: str = ""):
+    w = (w or "").strip()
+    cur = report.load_current()
+    ign = cfgmod.load().get("ignore", {}) or {}
+    items = []
+    for x in cur.get("pd", []):
+        if w and w in (x.get("name") or ""):
+            pid = str(x.get("id"))
+            items.append({"id": pid, "name": x.get("name"), "online": x.get("kzts") or 0,
+                          "ignored": ("pd:" + pid) in ign})
+    items.sort(key=lambda a: -(a.get("online") or 0))
+    return {"ok": True, "count": len(items), "items": items}
+
+
+def _sync_mon():
+    c = cfgmod.load()
+    mon.PUSH = c.get("push", {}) or {}
+    mon.IGNORE = c.get("ignore", {}) or {}
+    mon.WEBHOOK = c.get("wecom_webhook", "") or ""
+    mon.SERVERCHAN_KEY = c.get("serverchan_key", "") or ""
+
+
+@app.get("/api/sb_status")
+def api_sb_status(request: Request, refresh: int = 0):
+    if not request.session.get("admin"):
+        return {"ok": False, "msg": "未登录"}
+    acct = mon.read_account()
+    okmap = acct.get("ok") if isinstance(acct.get("ok"), dict) else {}
+    if refresh:
+        okmap = {}
+        for i, ck in enumerate(mon.SB_COOKIES):
+            try:
+                okmap[str(i)] = bool(mon._ping_cookie(ck))
+            except Exception:
+                okmap[str(i)] = False
+        acct["ok"] = okmap
+        mon.write_account(acct)
+    n = len(mon.SB_COOKIES)
+    try:
+        active = int(acct.get("active", 0)) % n if n else 0
+    except Exception:
+        active = 0
+    accounts = [{"index": i, "name": f"账号{i+1}",
+                 "ok": (None if str(i) not in okmap else bool(okmap.get(str(i)))),
+                 "active": i == active}
+                for i in range(n)]
+    return {"ok": True, "accounts": accounts, "active": active,
+            "preferred": acct.get("preferred", 0), "checked_at": acct.get("checked_at", "")}
+
+
+@app.post("/api/sb_switch")
+def api_sb_switch(request: Request, idx: int = Form(0)):
+    if not request.session.get("admin"):
+        return {"ok": False, "msg": "未登录"}
+    n = len(mon.SB_COOKIES)
+    if n == 0:
+        return {"ok": False, "msg": "未配置账号"}
+    idx = max(0, min(idx, n - 1))
+    acct = mon.read_account()
+    acct["preferred"] = idx
+    mon.write_account(acct)
+    return {"ok": True, "preferred": idx}
+
+
+@app.post("/api/test_push")
+def api_test_push(request: Request):
+    if not request.session.get("admin"):
+        return {"ok": False, "msg": "未登录"}
+    _sync_mon()
+    cur = report.load_current()
+    try:
+        msg = mon.send_test_heartbeat(cur.get("ssb", []), cur.get("pd", []))
+        return {"ok": True, "msg": "已发送测试推送", "preview": msg}
+    except Exception as e:
+        return {"ok": False, "msg": f"发送失败：{type(e).__name__}: {e}"}
 
 
 @app.post("/api/comment")
@@ -130,18 +331,13 @@ def read_usage(path):
 
 
 def schedule_times(cfg):
+    step = int(cfg.get("sched_step", 20)) or 20
     out = []
-    st = int(cfg.get("sched_start", 8))
-    en = int(cfg.get("sched_end", 19))
-    step = int(cfg.get("sched_step", 10)) or 10
-    for h in range(st, en):
+    for h in range(24):
         m = 0
         while m < 60:
             out.append(f"{h:02d}:{m:02d}")
             m += step
-    out.append(f"{en:02d}:00")
-    for h in sorted(set(int(x) for x in cfg.get("sched_extra_hours", []))):
-        out.append(f"{h:02d}:00")
     return out
 
 
@@ -204,9 +400,174 @@ textarea{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .row{display:flex;gap:14px}.row>div{flex:1}
 button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer}
 button:hover{background:#1d4ed8}
-.ok{background:#e8f7ee;color:#1a8f43;border-radius:8px;padding:8px 12px;font-size:13px;margin:10px 0}
-.muted{color:#8794a8;font-size:13px}
+ .ok{background:#e8f7ee;color:#1a8f43;border-radius:8px;padding:8px 12px;font-size:13px;margin:10px 0}
+ .muted{color:#8794a8;font-size:13px}
+ .chk{display:inline-flex;align-items:center;gap:6px;font-size:14px;margin:4px 14px 4px 0;cursor:pointer}
+ .chk input{width:auto;margin:0}
+ .pushbox{border:1px solid #e6e8eb;border-radius:10px;padding:12px 14px;margin:10px 0;background:#fbfcfe}
+ .distlist{display:flex;flex-wrap:wrap;gap:2px;margin-top:6px}
+ .kwtbl{width:100%;border-collapse:collapse}
+ .kwtbl th,.kwtbl td{border-bottom:1px solid #eef0f3;padding:6px;font-size:13px;text-align:center;vertical-align:middle}
+ .kwtbl th{color:#666;font-weight:500}
+ .kwtbl input[type=text]{padding:6px 8px;font-size:13px}
+ .kwcount{font-size:12px;color:#1a8f43;white-space:nowrap}
+ .kwcount.warn{color:#dc2626;font-weight:600}
+ .kwitemsrow td{padding:0 6px 10px}
+ .kwitems{display:flex;flex-wrap:wrap;gap:6px 10px;text-align:left}
+ .kwitem{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#475467;background:#f2f6ff;border:1px solid #e3ecff;border-radius:6px;padding:3px 8px;cursor:pointer;white-space:nowrap}
+ .kwitem input{width:auto;margin:0}
+ .acctlist{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+ .acctpill{display:inline-flex;align-items:center;gap:8px;border-radius:20px;padding:4px 10px;font-size:13px;border:1px solid}
+ .acct-ok{background:#e8f7ee;color:#1a8f43;border-color:#b7e4c7}
+ .acct-bad{background:#fdecec;color:#c0392b;border-color:#f5c2c0}
+ .acct-unk{background:#f2f4f7;color:#667085;border-color:#d0d5dd}
+ .acctpill button{padding:2px 8px;font-size:12px}
+ button.ghost{background:#fff;color:#2563eb;border:1px solid #bfd3ff}
+ button.ghost:hover{background:#f2f6ff}
+ button:disabled{opacity:.5;cursor:not-allowed}
+ .f{display:block;font-size:13px;color:#475467;margin:12px 0 4px}
+."""
+
+
+def esc(s):
+    return html.escape(str("" if s is None else s))
+
+
+ADMIN_PUSH_JS = """
+<script>
+var KW = (window.KW_INIT || []).slice();
+var PDKW = (window.PDKW_INIT || []).slice();
+var IGN = {};
+(function(){ var ta=document.getElementById('ignore_ta'); if(ta){ try{ IGN=JSON.parse(ta.value||'{}')||{}; }catch(e){ IGN={}; } } })();
+function kwEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+
+function makeEditor(cfg){
+  var list=cfg.list, tb=document.getElementById(cfg.tbody), api=cfg.api, pfx=cfg.prefix||'';
+  function fetchItems(i){
+    var w=(list[i].word||'').trim();
+    var box=document.getElementById(cfg.kwi+i), cnt=document.getElementById(cfg.kwc+i);
+    if(!box) return;
+    if(!w){ box.innerHTML=''; if(cnt){cnt.textContent='—';cnt.className='kwcount';} return; }
+    fetch(api+'?w='+encodeURIComponent(w)).then(function(r){return r.json();}).then(function(d){
+      var items=(d&&d.items)||[];
+      if(cnt){ cnt.textContent=items.length+' 个项目'+(items.length>10?'（太宽泛，请修改）':''); cnt.className='kwcount'+(items.length>10?' warn':''); }
+      if(!items.length){ box.innerHTML='<span class="muted">（暂无命中）</span>'; return; }
+      box.innerHTML=items.map(function(it){
+        var pid=pfx+String(it.id);
+        var chk=(IGN[pid]!==undefined)?'checked':'';
+        return '<label class="kwitem"><input type="checkbox" class="kwignite" data-pid="'+kwEsc(pid)+'" data-name="'+kwEsc(it.name)+'" '+chk+'> '+kwEsc(it.name)+'（'+(it.online||0)+' 套）</label>';
+      }).join('');
+    }).catch(function(){ if(box) box.innerHTML='<span class="muted">（加载失败）</span>'; });
+  }
+  function render(){
+    if(!tb) return;
+    tb.innerHTML='';
+    list.forEach(function(r,i){
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td style="text-align:left"><input type="text" class="kw" data-i="'+i+'" value="'+kwEsc(r.word)+'" placeholder="如：森兰"></td>'
+        +'<td><input type="checkbox" class="kwnew" data-i="'+i+'" '+(r['new']?'checked':'')+'></td>'
+        +'<td><input type="checkbox" class="kwup" data-i="'+i+'" '+(r.updown?'checked':'')+'></td>'
+        +'<td><input type="checkbox" class="kwcnt" data-i="'+i+'" '+(r.count?'checked':'')+'></td>'
+        +'<td><input type="checkbox" class="kwign" data-i="'+i+'" '+(r.ignore?'checked':'')+'></td>'
+        +'<td><span class="kwcount" id="'+cfg.kwc+i+'">—</span></td>'
+        +'<td><button type="button" class="ghost kwdel" data-i="'+i+'">删除</button></td>';
+      tb.appendChild(tr);
+      var tr2=document.createElement('tr'); tr2.className='kwitemsrow';
+      tr2.innerHTML='<td colspan="7"><div class="kwitems" id="'+cfg.kwi+i+'"></div></td>';
+      tb.appendChild(tr2);
+    });
+    var add=document.getElementById(cfg.add); if(add) add.disabled=list.length>=10;
+    list.forEach(function(r,i){ if((r.word||'').trim()) fetchItems(i); });
+  }
+  if(tb){
+    tb.addEventListener('input', function(e){
+      var t=e.target; if(!t.classList.contains('kw')) return;
+      var i=+t.getAttribute('data-i'); list[i].word=t.value;
+      clearTimeout(t._t); t._t=setTimeout(function(){ fetchItems(i); }, 350);
+    });
+    tb.addEventListener('change', function(e){
+      var t=e.target; var i=+t.getAttribute('data-i');
+      if(t.classList.contains('kwnew')) list[i]['new']=t.checked;
+      else if(t.classList.contains('kwup')) list[i].updown=t.checked;
+      else if(t.classList.contains('kwcnt')) list[i].count=t.checked;
+      else if(t.classList.contains('kwign')) list[i].ignore=t.checked;
+      else if(t.classList.contains('kwignite')){
+        var pid=t.getAttribute('data-pid'), nm=t.getAttribute('data-name');
+        if(t.checked) IGN[pid]=nm; else delete IGN[pid];
+      }
+    });
+    tb.addEventListener('click', function(e){
+      if(e.target.classList.contains('kwdel')){ list.splice(+e.target.getAttribute('data-i'),1); render(); }
+    });
+  }
+  var add=document.getElementById(cfg.add);
+  if(add) add.addEventListener('click', function(){ if(list.length<10){ list.push({word:'',new:true,updown:true,count:true,ignore:false}); render(); } });
+  return render;
+}
+
+var rendSSB = makeEditor({list:KW, tbody:'kwrows', add:'kwadd', api:'/api/kwitems', prefix:'', kwc:'kwc_', kwi:'kwi_'});
+var rendPD = makeEditor({list:PDKW, tbody:'pdrows', add:'pdadd', api:'/api/pditems', prefix:'pd:', kwc:'pdc_', kwi:'pdi_'});
+
+(function(){
+  var form=document.querySelector('form[action$="/save"]');
+  if(form) form.addEventListener('submit', function(){
+    var dists=[]; document.querySelectorAll('.dist:checked').forEach(function(c){ dists.push(c.value); });
+    function rules(arr){ return arr.filter(function(r){return (r.word||'').trim();}).map(function(r){ return {word:r.word.trim(),'new':!!r['new'],updown:!!r.updown,count:!!r.count,ignore:!!r.ignore}; }); }
+    var pj={ total_change: !!(document.getElementById('p_total')||{}).checked,
+             district_change: !!(document.getElementById('p_dist')||{}).checked,
+             districts: dists,
+             pd_updown: !!(document.getElementById('p_pdupdown')||{}).checked,
+             keywords: rules(KW),
+             pd_keywords: rules(PDKW) };
+    document.getElementById('push_json').value=JSON.stringify(pj);
+    var ta=document.getElementById('ignore_ta'); if(ta) ta.value=JSON.stringify(IGN,null,1);
+  });
+  rendSSB(); rendPD();
+})();
+</script>
 """
+
+ADMIN_EXTRA_JS = """
+<script>
+(function(){
+  var tb=document.getElementById('testpush');
+  if(tb) tb.addEventListener('click', function(){
+    tb.disabled=true; var out=document.getElementById('testpush_msg'); if(out) out.textContent='发送中…';
+    fetch('/api/test_push',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+      if(out) out.textContent=(d&&d.msg)||(d&&d.ok?'已发送':'失败');
+      tb.disabled=false;
+    }).catch(function(){ if(out) out.textContent='发送失败'; tb.disabled=false; });
+  });
+  function renderAcct(d){
+    var box=document.getElementById('acctlist'); if(!box) return;
+    var accs=(d&&d.accounts)||[];
+    if(!accs.length){ box.innerHTML='<span class="muted">（未配置账号）</span>'; return; }
+    box.innerHTML=accs.map(function(a){
+      var cls=(a.ok===true)?'acct-ok':(a.ok===false?'acct-bad':'acct-unk');
+      var txt=(a.ok===true)?'可用':(a.ok===false?'失效':'未知');
+      var tag=a.active?'（当前）':'';
+      return '<span class="acctpill '+cls+'">'+a.name+' '+txt+tag+' <button type="button" class="ghost acctsw" data-i="'+a.index+'">切换</button></span>';
+    }).join('');
+    box.querySelectorAll('.acctsw').forEach(function(b){
+      b.addEventListener('click', function(){
+        var i=+b.getAttribute('data-i');
+        fetch('/api/sb_switch',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+i})
+          .then(function(r){return r.json();}).then(function(){ loadAcct(1); });
+      });
+    });
+  }
+  function loadAcct(refresh){
+    var box=document.getElementById('acctlist');
+    fetch('/api/sb_status'+(refresh?'?refresh=1':''))
+      .then(function(r){return r.json();}).then(renderAcct)
+      .catch(function(){ if(box) box.innerHTML='<span class="muted">（状态获取失败）</span>'; });
+  }
+  var rf=document.getElementById('acctrefresh'); if(rf) rf.addEventListener('click', function(){ loadAcct(1); });
+  loadAcct(1);
+})();
+</script>
+"""
+
 
 
 def _shell(inner, request):
@@ -253,6 +614,28 @@ def render_dashboard(request, msg=""):
     extra = ",".join(str(h) for h in cfg.get("sched_extra_hours", []))
     keywords = ",".join(cfg.get("keywords", []))
     ignore = json.dumps(cfg.get("ignore", {}), ensure_ascii=False, indent=1)
+    push = cfg.get("push", {}) or {}
+    cur_now = report.load_current()
+    districts = sorted({x.get("district") for x in cur_now.get("ssb", []) if x.get("district")})
+    sel_dists = set(push.get("districts") or [])
+    dist_checks = "".join(
+        f'<label class="chk"><input type="checkbox" class="dist" value="{esc(d)}"{" checked" if d in sel_dists else ""}> {esc(d)}</label>'
+        for d in districts)
+    p_total = "checked" if push.get("total_change") else ""
+    p_dist = "checked" if push.get("district_change") else ""
+    kw_init = json.dumps([
+        {"word": r.get("word", ""), "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+         "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))}
+        for r in (push.get("keywords") or []) if isinstance(r, dict)
+    ], ensure_ascii=False)
+    pd_kw_init = json.dumps([
+        {"word": r.get("word", ""), "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+         "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))}
+        for r in (push.get("pd_keywords") or []) if isinstance(r, dict)
+    ], ensure_ascii=False)
+    p_pdupdown = "checked" if push.get("pd_updown") else ""
+    push_js = (f'<script>var KW_INIT = {kw_init}; var PDKW_INIT = {pd_kw_init};</script>'
+               + ADMIN_PUSH_JS + ADMIN_EXTRA_JS)
 
     inner = f"""
 <div class="grid">
@@ -279,38 +662,96 @@ def render_dashboard(request, msg=""):
 </section>
 
 <section>
-<h2>查询策略 · 今日点位（{len(times)} 次）</h2>
-<div style="margin:6px 0 14px">{time_tags}</div>
+<h2>查询策略</h2>
+<div class="muted" style="margin-bottom:12px">查询与推送是分开的：查询全天 24 小时按间隔进行（夜间也跑，用于会话保活）；推送只在下面「推送策略」的心跳整点触发。</div>
 <form method="post" action="{ADMIN_PATH}/save">
 <div class="row">
-  <div><label class="f">起始小时</label><input name="sched_start" value="{cfg.get('sched_start',8)}"></div>
-  <div><label class="f">结束小时（整点停）</label><input name="sched_end" value="{cfg.get('sched_end',19)}"></div>
-  <div><label class="f">间隔(分钟)</label><input name="sched_step" value="{cfg.get('sched_step',10)}"></div>
-  <div><label class="f">额外整点(逗号)</label><input name="sched_extra_hours" value="{extra}"></div>
+  <div><label class="f">查询间隔（分钟）</label><input name="sched_step" value="{cfg.get('sched_step',20)}"></div>
+  <div><label class="f">报表默认基线（几天前）</label><input name="default_base_days" value="{cfg.get('default_base_days',1)}"></div>
 </div>
+<div class="pushbox">
+  <div><b>主号</b>：每次查询全部数据（翻页 + 供应预告 + 青年安居）。</div>
+  <div><b>备号</b>：每次仅单次访问保活（不翻页、不取预告/青年）；主号失效时自动切换为备号全量查询。</div>
+  <div class="muted" style="margin-top:8px">今日查询点位（{len(times)} 次）：</div>
+  <div style="margin-top:6px">{time_tags}</div>
+</div>
+<div class="pushbox">
+  <div style="font-weight:600;margin-bottom:6px">查询账号状态</div>
+  <div class="acctlist" id="acctlist">加载中…</div>
+  <button type="button" id="acctrefresh" class="ghost" style="margin-top:8px">刷新状态</button>
+  <span class="muted">（点“切换”设为优先使用账号，下一轮查询生效）</span>
+</div>
+<input type="hidden" name="sched_start" value="{cfg.get('sched_start',8)}">
+<input type="hidden" name="sched_end" value="{cfg.get('sched_end',19)}">
+<input type="hidden" name="sched_extra_hours" value="{extra}">
+<input type="hidden" name="district_id" value="{cfg.get('district_id','')}">
+<input type="hidden" name="district_name" value="{cfg.get('district_name','全市')}">
+</section>
+
+<section>
+<h2 style="margin-top:22px">推送策略</h2>
+<div class="muted" style="margin-bottom:12px">推送按「心跳整点」触发：到点对比上次心跳，汇总下面「推送内容」里勾选的变动发送；异常（Cookie 失效、限流、恢复）为特殊情况即时推送。</div>
 <div class="row">
-  <div><label class="f">心跳小时（逗号，24时制）</label><input name="heartbeat_hours" value="{hb}"></div>
-  <div><label class="f">夜间静默起（时）</label><input name="quiet_start" value="{cfg.get('quiet_start',0)}"></div>
+  <div><label class="f">心跳整点（逗号，24 时制）</label><input name="heartbeat_hours" value="{hb}"></div>
+  <div><label class="f">夜间静默起（时，不推送）</label><input name="quiet_start" value="{cfg.get('quiet_start',0)}"></div>
   <div><label class="f">夜间静默止（时）</label><input name="quiet_end" value="{cfg.get('quiet_end',8)}"></div>
 </div>
-<div class="row">
-  <div><label class="f">报表默认基线（几天前）</label><input name="default_base_days" value="{cfg.get('default_base_days',1)}"></div>
-  <div><label class="f">监控区 ID（空=全市）</label><input name="district_id" value="{cfg.get('district_id','')}"></div>
-  <div><label class="f">监控区名称</label><input name="district_name" value="{cfg.get('district_name','全市')}"></div>
-</div>
+<div class="muted">特殊情况（Cookie 失效 / 查询限流 / 恢复）始终即时推送，不受内容勾选影响。</div>
 
-<h2 style="margin-top:22px">推送 / 关键字</h2>
+<h2 style="margin-top:22px">推送内容</h2>
 <div class="row">
   <div><label class="f">企业微信 Webhook</label><input name="wecom_webhook" value="{cfg.get('wecom_webhook','')}"></div>
   <div><label class="f">Server酱 SendKey</label><input name="serverchan_key" value="{cfg.get('serverchan_key','')}"></div>
 </div>
-<label class="f">关键字（逗号分隔）</label><input name="keywords" value="{keywords}">
-<label class="f">忽略名单（JSON：项目ID→名称）</label><textarea name="ignore" rows="4">{ignore}</textarea>
+
+<div class="pushbox">
+  <label class="chk"><input type="checkbox" id="p_total" {p_total}> 随申办总项目数量增减</label>
+</div>
+
+<div class="pushbox">
+  <label class="chk"><input type="checkbox" id="p_dist" {p_dist}> 随申办特定行政区项目数量增减</label>
+  <div class="muted" style="margin:6px 0 4px">勾选要关注的行政区（可多选）：</div>
+  <div class="distlist">{dist_checks or '<span class="muted">（暂无行政区数据）</span>'}</div>
+</div>
+
+<div class="pushbox">
+  <div style="font-weight:600;margin-bottom:6px">随申办特定词条房源变动（最多 10 个）</div>
+  <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；下方逐条列出命中项目，<b>勾选项目前的方框 = 忽略该房源（不推送）</b>，不勾选 = 正常推送；命中超过 10 个说明词条太宽泛，建议修改。</div>
+  <table class="kwtbl">
+    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
+    <tbody id="kwrows"></tbody>
+  </table>
+  <button type="button" id="kwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+</div>
+
+<div class="pushbox">
+  <label class="chk"><input type="checkbox" id="p_pdupdown" {p_pdupdown}> 明珠在线项目上下线</label>
+  <div style="font-weight:600;margin:14px 0 6px">明珠在线特定词条房源变动（最多 10 个）</div>
+  <div class="muted" style="margin-bottom:8px">规则同随申办；逐条列出的命中项目，<b>勾选 = 忽略（不推送）</b>。</div>
+  <table class="kwtbl">
+    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
+    <tbody id="pdrows"></tbody>
+  </table>
+  <button type="button" id="pdadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+</div>
+
+<div class="pushbox">
+  <div style="font-weight:600;margin-bottom:6px">推送测试</div>
+  <div class="muted" style="margin-bottom:8px">按当前<b>已保存</b>的设置立即发送一条心跳推送（建议先保存再测试）。</div>
+  <button type="button" id="testpush" class="ghost">发送测试推送</button>
+  <span id="testpush_msg" class="muted" style="margin-left:10px"></span>
+</div>
+
+<input type="hidden" name="push_json" id="push_json">
+
+<details style="margin-top:10px"><summary class="muted">高级：忽略名单（项目ID→名称，JSON）</summary>
+<textarea name="ignore" id="ignore_ta" rows="4">{ignore}</textarea></details>
 {(f'<div class="ok">{msg}</div>') if msg else ''}
 <p><button>保存配置</button> <span class="muted">保存后监控下一轮生效（≤按策略点位）</span></p>
 </form>
 </section>
 """
+    inner += push_js
     return _shell(inner, request)
 
 
@@ -337,11 +778,11 @@ def admin_logout(request: Request):
 
 @app.post(ADMIN_PATH + "/save")
 def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: str = Form(""),
-               keywords: str = Form(""), ignore: str = Form("{}"), district_id: str = Form(""),
+               ignore: str = Form("{}"), district_id: str = Form(""),
                district_name: str = Form("全市"), heartbeat_hours: str = Form(""),
                quiet_start: str = Form("0"), quiet_end: str = Form("8"), default_base_days: str = Form("1"),
                sched_start: str = Form("8"), sched_end: str = Form("19"), sched_extra_hours: str = Form("20,21,22,0"),
-               sched_step: str = Form("10")):
+               sched_step: str = Form("10"), push_json: str = Form("")):
     if not request.session.get("admin"):
         return RedirectResponse(ADMIN_PATH, status_code=303)
 
@@ -355,10 +796,44 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
         ig = json.loads(ignore) if ignore.strip() else {}
     except Exception:
         ig = {}
+    old = cfgmod.load()
+    if push_json.strip():
+        try:
+            pj = json.loads(push_json)
+        except Exception:
+            pj = {}
+        if not isinstance(pj, dict):
+            pj = {}
+        def parse_rules(raw):
+            out, seen = [], set()
+            for r in (raw or [])[:10]:
+                if not isinstance(r, dict):
+                    continue
+                w = str(r.get("word", "")).strip()
+                if not w or w in seen:
+                    continue
+                seen.add(w)
+                out.append({"word": w, "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+                            "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))})
+            return out
+        rules = parse_rules(pj.get("keywords"))
+        pd_rules = parse_rules(pj.get("pd_keywords"))
+        push_cfg = {
+            "total_change": bool(pj.get("total_change")),
+            "district_change": bool(pj.get("district_change")),
+            "districts": [str(d) for d in (pj.get("districts") or []) if str(d).strip()],
+            "keywords": rules,
+            "pd_updown": bool(pj.get("pd_updown")),
+            "pd_keywords": pd_rules,
+        }
+        kw_list = [r["word"] for r in rules]
+    else:
+        push_cfg = old.get("push", cfgmod.DEFAULTS["push"])
+        kw_list = old.get("keywords", [])
     cfg = {
         "wecom_webhook": wecom_webhook.strip(),
         "serverchan_key": serverchan_key.strip(),
-        "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
+        "keywords": kw_list,
         "ignore": ig,
         "district_id": district_id.strip(),
         "district_name": district_name.strip() or "全市",
@@ -370,6 +845,7 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
         "sched_end": int(sched_end or 19),
         "sched_step": int(sched_step or 10),
         "sched_extra_hours": ints(sched_extra_hours, cfgmod.DEFAULTS["sched_extra_hours"]),
+        "push": push_cfg,
     }
     cfgmod.save(cfg)
     return HTMLResponse(render_dashboard(request, msg="已保存，监控将在下一轮点位生效"))

@@ -481,6 +481,25 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .cmt-send{{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;white-space:nowrap}}
  .cmt-send:disabled{{opacity:.6;cursor:default}}
  .cmt-hint{{font-size:12px;color:#e11d48;margin-top:4px}}
+ .mapsearch{{display:flex;gap:10px;align-items:flex-start;padding:10px 0;flex-wrap:wrap}}
+ .mapsb{{position:relative;flex:1;min-width:220px}}
+ .mapsearch input{{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d5dbe3;border-radius:8px;font-size:14px}}
+ .mapsearch button{{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer;white-space:nowrap}}
+ .mapsug{{position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid #d5dbe3;border-radius:8px;margin-top:2px;max-height:300px;overflow:auto;display:none;box-shadow:0 8px 22px rgba(0,0,0,.14)}}
+ .mapsug>div{{padding:8px 10px;cursor:pointer;border-bottom:1px solid #f1f3f6}}
+ .mapsug>div:hover{{background:#f2f6ff}}
+ .mapsug .sg-n{{font-weight:600;font-size:13px}}
+ .mapsug .sg-a{{color:#8794a8;font-size:12px;margin-top:1px}}
+ .amap{{height:460px;border-radius:10px;margin-top:10px;background:#eef1f5}}
+ .maplist{{margin-top:12px}}
+ .mapitem{{display:flex;gap:10px;padding:8px 4px;border-bottom:1px solid #eef0f3;align-items:flex-start}}
+ .mapidx{{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#2563eb;color:#fff;text-align:center;line-height:22px;font-size:12px}}
+ .mapname{{font-weight:600;font-size:14px}}
+ .maptag{{font-size:11px;color:#fff;background:#9aa4b2;border-radius:5px;padding:1px 6px;margin-left:6px}}
+ .maptag.tag-sb{{background:#2f6fed}}
+ .maptag.tag-pd{{background:#f59e0b}}
+ .mapmeta{{font-size:12px;color:#666;margin-top:2px}}
+ .muted{{color:#8794a8}}
  @media (max-width:640px){{
    .wrap{{padding:12px}}
    h1{{font-size:19px}}
@@ -496,6 +515,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <button class="sb-toggle" onclick="toggleNav()">«</button>
 <div class="sb-title">章节</div>
 <a class="sb-link" href="#sec-top">概览</a>
+<a class="sb-link" href="#sec-map">智能找房</a>
 <a class="sb-link" href="#sec-notice">供应预告</a>
 <a class="sb-link" href="#sec-ssb">随申办·行政区</a>
 <a class="sb-link" href="#sec-pd">明珠在线·行政区</a>
@@ -513,6 +533,20 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  <div class="card"><div class="n">{c_pd}</div><div class="l">明珠在线 项目数</div></div>
  <div class="card"><div class="n">{c_pd_kzts}</div><div class="l">明珠在线 可租套数</div></div>
  <div class="card"><div class="n">{c_notice}</div><div class="l">随申办 供应预告</div></div>
+</div>
+
+<h2 id="sec-map">🧭 智能找房</h2>
+<div class="box">
+  <div class="mapsearch">
+    <div class="mapsb">
+      <input id="map_q" placeholder="输入上海地址或地标，如：人民广场 / 张江科学之门 / 某路某弄" autocomplete="off">
+      <div id="map_sug" class="mapsug"></div>
+    </div>
+    <button type="button" onclick="doFind()">找附近房源</button>
+    <span id="map_msg" class="muted"></span>
+  </div>
+  <div id="amap" class="amap"></div>
+  <div id="map_list" class="maplist"></div>
 </div>
 
 <h2 id="sec-notice">随申办 · 供应预告（{len(notice)}）</h2>
@@ -564,6 +598,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     <div id="cmpEmpty" class="cmp-empty">还没有加入对比的房源</div>
   </div>
 </div>
+<script src="https://webapi.amap.com/maps?v=1.4.15&key=c226df9a44846d549b4f1689ece31e5"></script>
 <script>
 function filterSb(){{
   var mn=parseFloat((document.getElementById('sb_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
@@ -874,6 +909,95 @@ filterPd();
 document.querySelectorAll('.sb_t,.sb_h,.sb_d').forEach(function(c){{ c.addEventListener('change', filterSb); }});
 ['sb_fmin','sb_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterSb); }});
 filterSb();
+function initAmap(){{
+  if(window.__amap || typeof AMap==='undefined') return;
+  try{{ window.__amap=new AMap.Map('amap',{{zoom:11,center:[121.4737,31.2304]}}); }}catch(e){{}}
+}}
+function mapPin(color){{
+  return '<div style="width:20px;height:20px;border-radius:50% 50% 50% 0;background:'+color+';transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)"></div>';
+}}
+function mapSuggest(){{
+  var box=document.getElementById('map_sug');
+  var q=(document.getElementById('map_q').value||'').trim();
+  mapSel=null;
+  if(q.length<2){{ box.style.display='none'; return; }}
+  fetch('/api/geosuggest?q='+encodeURIComponent(q)).then(function(r){{return r.json();}}).then(function(res){{
+    if(res&&res.ok===false){{
+      var mb=document.getElementById('map_msg'); if(mb) mb.textContent=res.msg||'查询失败';
+      box.style.display='none'; return;
+    }}
+    var items=(res&&res.items)||[];
+    if(!items.length){{ box.style.display='none'; return; }}
+    items=items.slice(0,8); box.__items=items;
+    var h='';
+    items.forEach(function(it,i){{
+      h+='<div data-i="'+i+'"><div class="sg-n">'+jesc(it.name)+'</div><div class="sg-a">'+jesc(it.district)+' '+jesc(it.addr)+'</div></div>';
+    }});
+    box.innerHTML=h; box.style.display='block';
+    box.querySelectorAll('div[data-i]').forEach(function(el){{
+      el.addEventListener('click', function(){{
+        var it=box.__items[+el.getAttribute('data-i')];
+        mapSel=it;
+        document.getElementById('map_q').value=it.name;
+        box.style.display='none';
+        doFind();
+      }});
+    }});
+  }}).catch(function(){{ box.style.display='none'; }});
+}}
+function doFind(){{
+  var q=(document.getElementById('map_q').value||'').trim();
+  var msg=document.getElementById('map_msg');
+  if(!mapSel && !q){{ msg.textContent='请输入地址'; return; }}
+  var box=document.getElementById('map_sug'); if(box) box.style.display='none';
+  var url = mapSel ? ('/api/nearby?lng='+mapSel.lng+'&lat='+mapSel.lat+'&n=10')
+                   : ('/api/nearby?q='+encodeURIComponent(q)+'&n=10');
+  msg.textContent='查询中…';
+  fetch(url).then(function(r){{return r.json();}}).then(function(res){{
+    if(!res||!res.ok){{ msg.textContent=(res&&res.msg)||'查询失败'; return; }}
+    msg.textContent='找到 '+res.houses.length+' 套最近房源（按直线距离）';
+    renderMapList(res.houses);
+    if(typeof AMap==='undefined'){{ msg.textContent='地图脚本未加载（检查高德Key）'; return; }}
+    initAmap();
+    var mp=window.__amap; if(!mp) return;
+    mp.clearMap();
+    var o=res.origin;
+    var m0=new AMap.Marker({{position:[o.lng,o.lat],content:mapPin('#111827'),offset:new AMap.Pixel(-10,-28),label:{{content:'搜索地址',direction:'top'}}}});
+    m0.setMap(mp);
+    res.houses.forEach(function(h){{
+      var color=(h.src==='随申办')?'#2f6fed':'#f59e0b';
+      var mk=new AMap.Marker({{position:[h.lng,h.lat],content:mapPin(color),offset:new AMap.Pixel(-10,-28),title:h.name}});
+      var d=(h.dist<1000)?(h.dist+'米'):((h.dist/1000).toFixed(2)+'公里');
+      var info='<div style="font-size:13px;line-height:1.7;min-width:180px"><b>'+jesc(h.name)+'</b><br>'+jesc(h.addr)+'<br>来源：'+h.src+' ｜ 距离 '+d+'<br>在售/可租 '+h.val+' 套 ｜ '+jesc(h.rent||'')+'</div>';
+      mk.infoWindow=new AMap.InfoWindow({{content:info,offset:new AMap.Pixel(0,-30)}});
+      mk.on('click',function(){{ mk.infoWindow.open(mp,mk.getPosition()); }});
+      mk.setMap(mp);
+    }});
+    if(mp.setFitView) mp.setFitView();
+  }}).catch(function(){{ msg.textContent='查询失败'; }});
+}}
+function renderMapList(hs){{
+  var el=document.getElementById('map_list'); if(!el) return;
+  var h='';
+  hs.forEach(function(x,i){{
+    var d=(x.dist<1000)?(x.dist+' 米'):((x.dist/1000).toFixed(2)+' 公里');
+    var cls=(x.src==='随申办')?'tag-sb':'tag-pd';
+    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+'</div></div></div>';
+  }});
+  el.innerHTML=h;
+}}
+var mapSel=null, mapDeb=null;
+window.addEventListener('load', function(){{
+  initAmap();
+  var mq=document.getElementById('map_q');
+  if(mq) mq.addEventListener('input', function(){{ mapSel=null; clearTimeout(mapDeb); mapDeb=setTimeout(mapSuggest,300); }});
+  document.addEventListener('click', function(e){{
+    var box=document.getElementById('map_sug');
+    if(box && (!e.target.closest || !e.target.closest('.mapsb'))) box.style.display='none';
+  }});
+  var m=(location.search.match(/[?&]q=([^&]*)/));
+  if(m){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
+}});
 </script>
 </body></html>"""
 
