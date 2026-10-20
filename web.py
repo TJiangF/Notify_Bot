@@ -3,6 +3,7 @@ import sys
 import json
 import uuid
 import math
+import html
 import threading
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
@@ -149,6 +150,14 @@ def api_nearby(request: Request, q: str = "", n: int = 10, lng: float = 0.0, lat
     add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "")
     houses.sort(key=lambda h: h["dist"])
     return {"ok": True, "origin": origin, "houses": houses[:max(1, min(int(n), 50))]}
+
+
+@app.get("/api/kwcount")
+def api_kwcount(w: str = ""):
+    w = (w or "").strip()
+    cur = report.load_current()
+    items = [x for x in cur.get("ssb", []) if w and w in (x.get("name") or "")]
+    return {"ok": True, "count": len(items), "online": sum((x.get("online") or 0) for x in items)}
 
 
 @app.post("/api/comment")
@@ -302,9 +311,96 @@ textarea{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .row{display:flex;gap:14px}.row>div{flex:1}
 button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer}
 button:hover{background:#1d4ed8}
-.ok{background:#e8f7ee;color:#1a8f43;border-radius:8px;padding:8px 12px;font-size:13px;margin:10px 0}
-.muted{color:#8794a8;font-size:13px}
+ .ok{background:#e8f7ee;color:#1a8f43;border-radius:8px;padding:8px 12px;font-size:13px;margin:10px 0}
+ .muted{color:#8794a8;font-size:13px}
+ .chk{display:inline-flex;align-items:center;gap:6px;font-size:14px;margin:4px 14px 4px 0;cursor:pointer}
+ .chk input{width:auto;margin:0}
+ .pushbox{border:1px solid #e6e8eb;border-radius:10px;padding:12px 14px;margin:10px 0;background:#fbfcfe}
+ .distlist{display:flex;flex-wrap:wrap;gap:2px;margin-top:6px}
+ .kwtbl{width:100%;border-collapse:collapse}
+ .kwtbl th,.kwtbl td{border-bottom:1px solid #eef0f3;padding:6px;font-size:13px;text-align:center;vertical-align:middle}
+ .kwtbl th{color:#666;font-weight:500}
+ .kwtbl input[type=text]{padding:6px 8px;font-size:13px}
+ .kwcount{font-size:12px;color:#1a8f43;white-space:nowrap}
+ .kwcount.warn{color:#dc2626;font-weight:600}
+ button.ghost{background:#fff;color:#2563eb;border:1px solid #bfd3ff}
+ button.ghost:hover{background:#f2f6ff}
+ button:disabled{opacity:.5;cursor:not-allowed}
+ .f{display:block;font-size:13px;color:#475467;margin:12px 0 4px}
+."""
+
+
+def esc(s):
+    return html.escape(str("" if s is None else s))
+
+
+ADMIN_PUSH_JS = """
+<script>
+var KW = (window.KW_INIT || []).slice();
+function kwEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function renderKw(){
+  var tb=document.getElementById('kwrows'); if(!tb) return;
+  tb.innerHTML='';
+  KW.forEach(function(r,i){
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td style="text-align:left"><input type="text" class="kw" data-i="'+i+'" value="'+kwEsc(r.word)+'" placeholder="如：森兰"></td>'
+      +'<td><input type="checkbox" class="kwnew" data-i="'+i+'" '+(r['new']?'checked':'')+'></td>'
+      +'<td><input type="checkbox" class="kwup" data-i="'+i+'" '+(r.updown?'checked':'')+'></td>'
+      +'<td><input type="checkbox" class="kwcnt" data-i="'+i+'" '+(r.count?'checked':'')+'></td>'
+      +'<td><input type="checkbox" class="kwign" data-i="'+i+'" '+(r.ignore?'checked':'')+'></td>'
+      +'<td><span class="kwcount" id="kwc_'+i+'">—</span></td>'
+      +'<td><button type="button" class="ghost kwdel" data-i="'+i+'">删除</button></td>';
+    tb.appendChild(tr);
+  });
+  document.getElementById('kwadd').disabled = KW.length>=10;
+  KW.forEach(function(r,i){ if((r.word||'').trim()) fetchKw(i); });
+}
+function fetchKw(i){
+  var w=(KW[i].word||'').trim(); var el=document.getElementById('kwc_'+i); if(!el) return;
+  if(!w){ el.textContent='—'; el.className='kwcount'; return; }
+  fetch('/api/kwcount?w='+encodeURIComponent(w)).then(function(r){return r.json();}).then(function(d){
+    var n=(d&&d.count)||0;
+    el.textContent = n+' 个项目' + (n>10?'（太宽泛，请修改）':'');
+    el.className = 'kwcount' + (n>10?' warn':'');
+  }).catch(function(){ el.textContent='—'; });
+}
+(function(){
+  var tb=document.getElementById('kwrows');
+  if(tb){
+    tb.addEventListener('input', function(e){
+      var t=e.target; if(!t.classList.contains('kw')) return;
+      var i=+t.getAttribute('data-i'); KW[i].word=t.value;
+      clearTimeout(t._t); t._t=setTimeout(function(){ fetchKw(i); }, 350);
+    });
+    tb.addEventListener('change', function(e){
+      var t=e.target; var i=+t.getAttribute('data-i');
+      if(t.classList.contains('kwnew')) KW[i]['new']=t.checked;
+      else if(t.classList.contains('kwup')) KW[i].updown=t.checked;
+      else if(t.classList.contains('kwcnt')) KW[i].count=t.checked;
+      else if(t.classList.contains('kwign')) KW[i].ignore=t.checked;
+    });
+    tb.addEventListener('click', function(e){
+      if(e.target.classList.contains('kwdel')){ KW.splice(+e.target.getAttribute('data-i'),1); renderKw(); }
+    });
+  }
+  var add=document.getElementById('kwadd');
+  if(add) add.addEventListener('click', function(){ if(KW.length<10){ KW.push({word:'',new:true,updown:true,count:true,ignore:false}); renderKw(); } });
+  var form=document.querySelector('form[action$="/save"]');
+  if(form) form.addEventListener('submit', function(){
+    var dists=[]; document.querySelectorAll('.dist:checked').forEach(function(c){ dists.push(c.value); });
+    var pj={ total_change: !!(document.getElementById('p_total')||{}).checked,
+             district_change: !!(document.getElementById('p_dist')||{}).checked,
+             districts: dists,
+             keywords: KW.filter(function(r){return (r.word||'').trim();}).map(function(r){
+               return {word:r.word.trim(), 'new':!!r['new'], updown:!!r.updown, count:!!r.count, ignore:!!r.ignore};
+             }) };
+    document.getElementById('push_json').value=JSON.stringify(pj);
+  });
+  renderKw();
+})();
+</script>
 """
+
 
 
 def _shell(inner, request):
@@ -351,6 +447,21 @@ def render_dashboard(request, msg=""):
     extra = ",".join(str(h) for h in cfg.get("sched_extra_hours", []))
     keywords = ",".join(cfg.get("keywords", []))
     ignore = json.dumps(cfg.get("ignore", {}), ensure_ascii=False, indent=1)
+    push = cfg.get("push", {}) or {}
+    cur_now = report.load_current()
+    districts = sorted({x.get("district") for x in cur_now.get("ssb", []) if x.get("district")})
+    sel_dists = set(push.get("districts") or [])
+    dist_checks = "".join(
+        f'<label class="chk"><input type="checkbox" class="dist" value="{esc(d)}"{" checked" if d in sel_dists else ""}> {esc(d)}</label>'
+        for d in districts)
+    p_total = "checked" if push.get("total_change") else ""
+    p_dist = "checked" if push.get("district_change") else ""
+    kw_init = json.dumps([
+        {"word": r.get("word", ""), "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+         "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))}
+        for r in (push.get("keywords") or []) if isinstance(r, dict)
+    ], ensure_ascii=False)
+    push_js = f'<script>var KW_INIT = {kw_init};</script>' + ADMIN_PUSH_JS
 
     inner = f"""
 <div class="grid">
@@ -397,18 +508,43 @@ def render_dashboard(request, msg=""):
   <div><label class="f">监控区名称</label><input name="district_name" value="{cfg.get('district_name','全市')}"></div>
 </div>
 
-<h2 style="margin-top:22px">推送 / 关键字</h2>
+<h2 style="margin-top:22px">消息推送设置</h2>
+<div class="muted" style="margin:-2px 0 10px">推送以「定时心跳」为节奏：到心跳整点时，汇总下面勾选的变动内容发送；未勾选的类别不会推送。</div>
 <div class="row">
   <div><label class="f">企业微信 Webhook</label><input name="wecom_webhook" value="{cfg.get('wecom_webhook','')}"></div>
   <div><label class="f">Server酱 SendKey</label><input name="serverchan_key" value="{cfg.get('serverchan_key','')}"></div>
 </div>
-<label class="f">关键字（逗号分隔）</label><input name="keywords" value="{keywords}">
-<label class="f">忽略名单（JSON：项目ID→名称）</label><textarea name="ignore" rows="4">{ignore}</textarea>
+
+<div class="pushbox">
+  <label class="chk"><input type="checkbox" id="p_total" {p_total}> 随申办总项目数量增减</label>
+</div>
+
+<div class="pushbox">
+  <label class="chk"><input type="checkbox" id="p_dist" {p_dist}> 随申办特定行政区项目数量增减</label>
+  <div class="muted" style="margin:6px 0 4px">勾选要关注的行政区（可多选）：</div>
+  <div class="distlist">{dist_checks or '<span class="muted">（暂无行政区数据）</span>'}</div>
+</div>
+
+<div class="pushbox">
+  <div style="font-weight:600;margin-bottom:6px">随申办特定词条房源变动（最多 10 个）</div>
+  <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；右侧实时显示当前命中项目数，超过 10 个说明词条太宽泛，建议修改。</div>
+  <table class="kwtbl">
+    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>忽略</th><th>当前命中</th><th></th></tr></thead>
+    <tbody id="kwrows"></tbody>
+  </table>
+  <button type="button" id="kwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+</div>
+
+<input type="hidden" name="push_json" id="push_json">
+
+<details style="margin-top:10px"><summary class="muted">高级：忽略名单（项目ID→名称，JSON）</summary>
+<textarea name="ignore" rows="4">{ignore}</textarea></details>
 {(f'<div class="ok">{msg}</div>') if msg else ''}
 <p><button>保存配置</button> <span class="muted">保存后监控下一轮生效（≤按策略点位）</span></p>
 </form>
 </section>
 """
+    inner += push_js
     return _shell(inner, request)
 
 
@@ -435,11 +571,11 @@ def admin_logout(request: Request):
 
 @app.post(ADMIN_PATH + "/save")
 def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: str = Form(""),
-               keywords: str = Form(""), ignore: str = Form("{}"), district_id: str = Form(""),
+               ignore: str = Form("{}"), district_id: str = Form(""),
                district_name: str = Form("全市"), heartbeat_hours: str = Form(""),
                quiet_start: str = Form("0"), quiet_end: str = Form("8"), default_base_days: str = Form("1"),
                sched_start: str = Form("8"), sched_end: str = Form("19"), sched_extra_hours: str = Form("20,21,22,0"),
-               sched_step: str = Form("10")):
+               sched_step: str = Form("10"), push_json: str = Form("")):
     if not request.session.get("admin"):
         return RedirectResponse(ADMIN_PATH, status_code=303)
 
@@ -453,10 +589,38 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
         ig = json.loads(ignore) if ignore.strip() else {}
     except Exception:
         ig = {}
+    old = cfgmod.load()
+    if push_json.strip():
+        try:
+            pj = json.loads(push_json)
+        except Exception:
+            pj = {}
+        if not isinstance(pj, dict):
+            pj = {}
+        rules, seen = [], set()
+        for r in (pj.get("keywords") or [])[:10]:
+            if not isinstance(r, dict):
+                continue
+            w = str(r.get("word", "")).strip()
+            if not w or w in seen:
+                continue
+            seen.add(w)
+            rules.append({"word": w, "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+                          "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))})
+        push_cfg = {
+            "total_change": bool(pj.get("total_change")),
+            "district_change": bool(pj.get("district_change")),
+            "districts": [str(d) for d in (pj.get("districts") or []) if str(d).strip()],
+            "keywords": rules,
+        }
+        kw_list = [r["word"] for r in rules]
+    else:
+        push_cfg = old.get("push", cfgmod.DEFAULTS["push"])
+        kw_list = old.get("keywords", [])
     cfg = {
         "wecom_webhook": wecom_webhook.strip(),
         "serverchan_key": serverchan_key.strip(),
-        "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
+        "keywords": kw_list,
         "ignore": ig,
         "district_id": district_id.strip(),
         "district_name": district_name.strip() or "全市",
@@ -468,6 +632,7 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
         "sched_end": int(sched_end or 19),
         "sched_step": int(sched_step or 10),
         "sched_extra_hours": ints(sched_extra_hours, cfgmod.DEFAULTS["sched_extra_hours"]),
+        "push": push_cfg,
     }
     cfgmod.save(cfg)
     return HTMLResponse(render_dashboard(request, msg="已保存，监控将在下一轮点位生效"))

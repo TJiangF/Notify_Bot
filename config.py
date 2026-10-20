@@ -19,6 +19,12 @@ DEFAULTS = {
     "sched_end": 19,
     "sched_step": 20,
     "sched_extra_hours": [20, 21, 22, 0],
+    "push": {
+        "total_change": True,
+        "district_change": False,
+        "districts": [],
+        "keywords": [],
+    },
 }
 
 
