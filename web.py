@@ -16,6 +16,7 @@ sys.path.insert(0, BASE)
 import report  # noqa: E402
 import config as cfgmod  # noqa: E402
 import geocode  # noqa: E402
+import ssb_monitor as mon  # noqa: E402
 
 ADMIN_PATH = os.environ.get("SSB_ADMIN_PATH", "/admin")
 ADMIN_PW = os.environ.get("SSB_ADMIN_PASSWORD", "change-me")
@@ -173,6 +174,82 @@ def api_kwitems(w: str = ""):
                           "ignored": pid in ign})
     items.sort(key=lambda a: -(a.get("online") or 0))
     return {"ok": True, "count": len(items), "items": items}
+
+
+@app.get("/api/pditems")
+def api_pditems(w: str = ""):
+    w = (w or "").strip()
+    cur = report.load_current()
+    ign = cfgmod.load().get("ignore", {}) or {}
+    items = []
+    for x in cur.get("pd", []):
+        if w and w in (x.get("name") or ""):
+            pid = str(x.get("id"))
+            items.append({"id": pid, "name": x.get("name"), "online": x.get("kzts") or 0,
+                          "ignored": ("pd:" + pid) in ign})
+    items.sort(key=lambda a: -(a.get("online") or 0))
+    return {"ok": True, "count": len(items), "items": items}
+
+
+def _sync_mon():
+    c = cfgmod.load()
+    mon.PUSH = c.get("push", {}) or {}
+    mon.IGNORE = c.get("ignore", {}) or {}
+    mon.WEBHOOK = c.get("wecom_webhook", "") or ""
+    mon.SERVERCHAN_KEY = c.get("serverchan_key", "") or ""
+
+
+@app.get("/api/sb_status")
+def api_sb_status(request: Request, refresh: int = 0):
+    if not request.session.get("admin"):
+        return {"ok": False, "msg": "未登录"}
+    acct = mon.read_account()
+    okmap = acct.get("ok") if isinstance(acct.get("ok"), dict) else {}
+    if refresh:
+        okmap = {}
+        for i, ck in enumerate(mon.SB_COOKIES):
+            try:
+                okmap[str(i)] = bool(mon._ping_cookie(ck))
+            except Exception:
+                okmap[str(i)] = False
+        acct["ok"] = okmap
+        mon.write_account(acct)
+    n = len(mon.SB_COOKIES)
+    try:
+        active = int(acct.get("active", 0)) % n if n else 0
+    except Exception:
+        active = 0
+    accounts = [{"index": i, "name": f"账号{i+1}", "ok": bool(okmap.get(str(i))), "active": i == active}
+                for i in range(n)]
+    return {"ok": True, "accounts": accounts, "active": active,
+            "preferred": acct.get("preferred", 0), "checked_at": acct.get("checked_at", "")}
+
+
+@app.post("/api/sb_switch")
+def api_sb_switch(request: Request, idx: int = Form(0)):
+    if not request.session.get("admin"):
+        return {"ok": False, "msg": "未登录"}
+    n = len(mon.SB_COOKIES)
+    if n == 0:
+        return {"ok": False, "msg": "未配置账号"}
+    idx = max(0, min(idx, n - 1))
+    acct = mon.read_account()
+    acct["preferred"] = idx
+    mon.write_account(acct)
+    return {"ok": True, "preferred": idx}
+
+
+@app.post("/api/test_push")
+def api_test_push(request: Request):
+    if not request.session.get("admin"):
+        return {"ok": False, "msg": "未登录"}
+    _sync_mon()
+    cur = report.load_current()
+    try:
+        msg = mon.send_test_heartbeat(cur.get("ssb", []), cur.get("pd", []))
+        return {"ok": True, "msg": "已发送测试推送", "preview": msg}
+    except Exception as e:
+        return {"ok": False, "msg": f"发送失败：{type(e).__name__}: {e}"}
 
 
 @app.post("/api/comment")
@@ -337,6 +414,11 @@ button:hover{background:#1d4ed8}
  .kwitems{display:flex;flex-wrap:wrap;gap:6px 10px;text-align:left}
  .kwitem{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#475467;background:#f2f6ff;border:1px solid #e3ecff;border-radius:6px;padding:3px 8px;cursor:pointer;white-space:nowrap}
  .kwitem input{width:auto;margin:0}
+ .acctlist{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+ .acctpill{display:inline-flex;align-items:center;gap:8px;border-radius:20px;padding:4px 10px;font-size:13px;border:1px solid}
+ .acct-ok{background:#e8f7ee;color:#1a8f43;border-color:#b7e4c7}
+ .acct-bad{background:#fdecec;color:#c0392b;border-color:#f5c2c0}
+ .acctpill button{padding:2px 8px;font-size:12px}
  button.ghost{background:#fff;color:#2563eb;border:1px solid #bfd3ff}
  button.ghost:hover{background:#f2f6ff}
  button:disabled{opacity:.5;cursor:not-allowed}
@@ -351,82 +433,133 @@ def esc(s):
 ADMIN_PUSH_JS = """
 <script>
 var KW = (window.KW_INIT || []).slice();
+var PDKW = (window.PDKW_INIT || []).slice();
 var IGN = {};
 (function(){ var ta=document.getElementById('ignore_ta'); if(ta){ try{ IGN=JSON.parse(ta.value||'{}')||{}; }catch(e){ IGN={}; } } })();
 function kwEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-function renderKw(){
-  var tb=document.getElementById('kwrows'); if(!tb) return;
-  tb.innerHTML='';
-  KW.forEach(function(r,i){
-    var tr=document.createElement('tr');
-    tr.innerHTML='<td style="text-align:left"><input type="text" class="kw" data-i="'+i+'" value="'+kwEsc(r.word)+'" placeholder="如：森兰"></td>'
-      +'<td><input type="checkbox" class="kwnew" data-i="'+i+'" '+(r['new']?'checked':'')+'></td>'
-      +'<td><input type="checkbox" class="kwup" data-i="'+i+'" '+(r.updown?'checked':'')+'></td>'
-      +'<td><input type="checkbox" class="kwcnt" data-i="'+i+'" '+(r.count?'checked':'')+'></td>'
-      +'<td><input type="checkbox" class="kwign" data-i="'+i+'" '+(r.ignore?'checked':'')+'></td>'
-      +'<td><span class="kwcount" id="kwc_'+i+'">—</span></td>'
-      +'<td><button type="button" class="ghost kwdel" data-i="'+i+'">删除</button></td>';
-    tb.appendChild(tr);
-    var tr2=document.createElement('tr'); tr2.className='kwitemsrow';
-    tr2.innerHTML='<td colspan="7"><div class="kwitems" id="kwi_'+i+'"></div></td>';
-    tb.appendChild(tr2);
-  });
-  document.getElementById('kwadd').disabled = KW.length>=10;
-  KW.forEach(function(r,i){ if((r.word||'').trim()) fetchItems(i); });
-}
-function fetchItems(i){
-  var w=(KW[i].word||'').trim(); var box=document.getElementById('kwi_'+i); var cnt=document.getElementById('kwc_'+i);
-  if(!box) return;
-  if(!w){ box.innerHTML=''; if(cnt){cnt.textContent='—';cnt.className='kwcount';} return; }
-  fetch('/api/kwitems?w='+encodeURIComponent(w)).then(function(r){return r.json();}).then(function(d){
-    var items=(d&&d.items)||[];
-    if(cnt){ cnt.textContent=items.length+' 个项目'+(items.length>10?'（太宽泛，请修改）':''); cnt.className='kwcount'+(items.length>10?' warn':''); }
-    if(!items.length){ box.innerHTML='<span class="muted">（暂无命中）</span>'; return; }
-    box.innerHTML=items.map(function(it){
-      var pid=String(it.id);
-      var chk=(IGN[pid]!==undefined)?'checked':'';
-      return '<label class="kwitem"><input type="checkbox" class="kwignite" data-pid="'+kwEsc(pid)+'" data-name="'+kwEsc(it.name)+'" '+chk+'> '+kwEsc(it.name)+'（'+(it.online||0)+' 套）</label>';
-    }).join('');
-  }).catch(function(){ if(box) box.innerHTML='<span class="muted">（加载失败）</span>'; });
-}
-(function(){
-  var tb=document.getElementById('kwrows');
+
+function makeEditor(cfg){
+  var list=cfg.list, tb=document.getElementById(cfg.tbody), api=cfg.api, pfx=cfg.prefix||'';
+  function fetchItems(i){
+    var w=(list[i].word||'').trim();
+    var box=document.getElementById(cfg.kwi+i), cnt=document.getElementById(cfg.kwc+i);
+    if(!box) return;
+    if(!w){ box.innerHTML=''; if(cnt){cnt.textContent='—';cnt.className='kwcount';} return; }
+    fetch(api+'?w='+encodeURIComponent(w)).then(function(r){return r.json();}).then(function(d){
+      var items=(d&&d.items)||[];
+      if(cnt){ cnt.textContent=items.length+' 个项目'+(items.length>10?'（太宽泛，请修改）':''); cnt.className='kwcount'+(items.length>10?' warn':''); }
+      if(!items.length){ box.innerHTML='<span class="muted">（暂无命中）</span>'; return; }
+      box.innerHTML=items.map(function(it){
+        var pid=pfx+String(it.id);
+        var chk=(IGN[pid]!==undefined)?'checked':'';
+        return '<label class="kwitem"><input type="checkbox" class="kwignite" data-pid="'+kwEsc(pid)+'" data-name="'+kwEsc(it.name)+'" '+chk+'> '+kwEsc(it.name)+'（'+(it.online||0)+' 套）</label>';
+      }).join('');
+    }).catch(function(){ if(box) box.innerHTML='<span class="muted">（加载失败）</span>'; });
+  }
+  function render(){
+    if(!tb) return;
+    tb.innerHTML='';
+    list.forEach(function(r,i){
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td style="text-align:left"><input type="text" class="kw" data-i="'+i+'" value="'+kwEsc(r.word)+'" placeholder="如：森兰"></td>'
+        +'<td><input type="checkbox" class="kwnew" data-i="'+i+'" '+(r['new']?'checked':'')+'></td>'
+        +'<td><input type="checkbox" class="kwup" data-i="'+i+'" '+(r.updown?'checked':'')+'></td>'
+        +'<td><input type="checkbox" class="kwcnt" data-i="'+i+'" '+(r.count?'checked':'')+'></td>'
+        +'<td><input type="checkbox" class="kwign" data-i="'+i+'" '+(r.ignore?'checked':'')+'></td>'
+        +'<td><span class="kwcount" id="'+cfg.kwc+i+'">—</span></td>'
+        +'<td><button type="button" class="ghost kwdel" data-i="'+i+'">删除</button></td>';
+      tb.appendChild(tr);
+      var tr2=document.createElement('tr'); tr2.className='kwitemsrow';
+      tr2.innerHTML='<td colspan="7"><div class="kwitems" id="'+cfg.kwi+i+'"></div></td>';
+      tb.appendChild(tr2);
+    });
+    var add=document.getElementById(cfg.add); if(add) add.disabled=list.length>=10;
+    list.forEach(function(r,i){ if((r.word||'').trim()) fetchItems(i); });
+  }
   if(tb){
     tb.addEventListener('input', function(e){
       var t=e.target; if(!t.classList.contains('kw')) return;
-      var i=+t.getAttribute('data-i'); KW[i].word=t.value;
+      var i=+t.getAttribute('data-i'); list[i].word=t.value;
       clearTimeout(t._t); t._t=setTimeout(function(){ fetchItems(i); }, 350);
     });
     tb.addEventListener('change', function(e){
       var t=e.target; var i=+t.getAttribute('data-i');
-      if(t.classList.contains('kwnew')) KW[i]['new']=t.checked;
-      else if(t.classList.contains('kwup')) KW[i].updown=t.checked;
-      else if(t.classList.contains('kwcnt')) KW[i].count=t.checked;
-      else if(t.classList.contains('kwign')) KW[i].ignore=t.checked;
+      if(t.classList.contains('kwnew')) list[i]['new']=t.checked;
+      else if(t.classList.contains('kwup')) list[i].updown=t.checked;
+      else if(t.classList.contains('kwcnt')) list[i].count=t.checked;
+      else if(t.classList.contains('kwign')) list[i].ignore=t.checked;
       else if(t.classList.contains('kwignite')){
         var pid=t.getAttribute('data-pid'), nm=t.getAttribute('data-name');
         if(t.checked) IGN[pid]=nm; else delete IGN[pid];
       }
     });
     tb.addEventListener('click', function(e){
-      if(e.target.classList.contains('kwdel')){ KW.splice(+e.target.getAttribute('data-i'),1); renderKw(); }
+      if(e.target.classList.contains('kwdel')){ list.splice(+e.target.getAttribute('data-i'),1); render(); }
     });
   }
-  var add=document.getElementById('kwadd');
-  if(add) add.addEventListener('click', function(){ if(KW.length<10){ KW.push({word:'',new:true,updown:true,count:true,ignore:false}); renderKw(); } });
+  var add=document.getElementById(cfg.add);
+  if(add) add.addEventListener('click', function(){ if(list.length<10){ list.push({word:'',new:true,updown:true,count:true,ignore:false}); render(); } });
+  return render;
+}
+
+var rendSSB = makeEditor({list:KW, tbody:'kwrows', add:'kwadd', api:'/api/kwitems', prefix:'', kwc:'kwc_', kwi:'kwi_'});
+var rendPD = makeEditor({list:PDKW, tbody:'pdrows', add:'pdadd', api:'/api/pditems', prefix:'pd:', kwc:'pdc_', kwi:'pdi_'});
+
+(function(){
   var form=document.querySelector('form[action$="/save"]');
   if(form) form.addEventListener('submit', function(){
     var dists=[]; document.querySelectorAll('.dist:checked').forEach(function(c){ dists.push(c.value); });
+    function rules(arr){ return arr.filter(function(r){return (r.word||'').trim();}).map(function(r){ return {word:r.word.trim(),'new':!!r['new'],updown:!!r.updown,count:!!r.count,ignore:!!r.ignore}; }); }
     var pj={ total_change: !!(document.getElementById('p_total')||{}).checked,
              district_change: !!(document.getElementById('p_dist')||{}).checked,
              districts: dists,
-             keywords: KW.filter(function(r){return (r.word||'').trim();}).map(function(r){
-               return {word:r.word.trim(), 'new':!!r['new'], updown:!!r.updown, count:!!r.count, ignore:!!r.ignore};
-             }) };
+             pd_updown: !!(document.getElementById('p_pdupdown')||{}).checked,
+             keywords: rules(KW),
+             pd_keywords: rules(PDKW) };
     document.getElementById('push_json').value=JSON.stringify(pj);
     var ta=document.getElementById('ignore_ta'); if(ta) ta.value=JSON.stringify(IGN,null,1);
   });
-  renderKw();
+  rendSSB(); rendPD();
+})();
+</script>
+"""
+
+ADMIN_EXTRA_JS = """
+<script>
+(function(){
+  var tb=document.getElementById('testpush');
+  if(tb) tb.addEventListener('click', function(){
+    tb.disabled=true; var out=document.getElementById('testpush_msg'); if(out) out.textContent='发送中…';
+    fetch('/api/test_push',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+      if(out) out.textContent=(d&&d.msg)||(d&&d.ok?'已发送':'失败');
+      tb.disabled=false;
+    }).catch(function(){ if(out) out.textContent='发送失败'; tb.disabled=false; });
+  });
+  function renderAcct(d){
+    var box=document.getElementById('acctlist'); if(!box) return;
+    var accs=(d&&d.accounts)||[];
+    if(!accs.length){ box.innerHTML='<span class="muted">（未配置账号）</span>'; return; }
+    box.innerHTML=accs.map(function(a){
+      var cls=a.ok?'acct-ok':'acct-bad';
+      var tag=a.active?'（当前）':'';
+      return '<span class="acctpill '+cls+'">'+a.name+(a.ok?' 可用':' 失效')+tag+' <button type="button" class="ghost acctsw" data-i="'+a.index+'">切换</button></span>';
+    }).join('');
+    box.querySelectorAll('.acctsw').forEach(function(b){
+      b.addEventListener('click', function(){
+        var i=+b.getAttribute('data-i');
+        fetch('/api/sb_switch',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+i})
+          .then(function(r){return r.json();}).then(function(){ loadAcct(1); });
+      });
+    });
+  }
+  function loadAcct(refresh){
+    var box=document.getElementById('acctlist');
+    fetch('/api/sb_status'+(refresh?'?refresh=1':''))
+      .then(function(r){return r.json();}).then(renderAcct)
+      .catch(function(){ if(box) box.innerHTML='<span class="muted">（状态获取失败）</span>'; });
+  }
+  var rf=document.getElementById('acctrefresh'); if(rf) rf.addEventListener('click', function(){ loadAcct(1); });
+  loadAcct(0);
 })();
 </script>
 """
@@ -491,7 +624,14 @@ def render_dashboard(request, msg=""):
          "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))}
         for r in (push.get("keywords") or []) if isinstance(r, dict)
     ], ensure_ascii=False)
-    push_js = f'<script>var KW_INIT = {kw_init};</script>' + ADMIN_PUSH_JS
+    pd_kw_init = json.dumps([
+        {"word": r.get("word", ""), "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+         "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))}
+        for r in (push.get("pd_keywords") or []) if isinstance(r, dict)
+    ], ensure_ascii=False)
+    p_pdupdown = "checked" if push.get("pd_updown") else ""
+    push_js = (f'<script>var KW_INIT = {kw_init}; var PDKW_INIT = {pd_kw_init};</script>'
+               + ADMIN_PUSH_JS + ADMIN_EXTRA_JS)
 
     inner = f"""
 <div class="grid">
@@ -531,6 +671,12 @@ def render_dashboard(request, msg=""):
   <div class="muted" style="margin-top:8px">今日查询点位（{len(times)} 次）：</div>
   <div style="margin-top:6px">{time_tags}</div>
 </div>
+<div class="pushbox">
+  <div style="font-weight:600;margin-bottom:6px">查询账号状态</div>
+  <div class="acctlist" id="acctlist">加载中…</div>
+  <button type="button" id="acctrefresh" class="ghost" style="margin-top:8px">刷新状态</button>
+  <span class="muted">（点“切换”设为优先使用账号，下一轮查询生效）</span>
+</div>
 <input type="hidden" name="sched_start" value="{cfg.get('sched_start',8)}">
 <input type="hidden" name="sched_end" value="{cfg.get('sched_end',19)}">
 <input type="hidden" name="sched_extra_hours" value="{extra}">
@@ -566,12 +712,30 @@ def render_dashboard(request, msg=""):
 
 <div class="pushbox">
   <div style="font-weight:600;margin-bottom:6px">随申办特定词条房源变动（最多 10 个）</div>
-  <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；下方会逐条列出当前命中的项目，可单独勾选忽略。命中超过 10 个说明词条太宽泛，建议修改。</div>
+  <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；下方逐条列出命中项目，<b>勾选项目前的方框 = 忽略该房源（不推送）</b>，不勾选 = 正常推送；命中超过 10 个说明词条太宽泛，建议修改。</div>
   <table class="kwtbl">
     <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
     <tbody id="kwrows"></tbody>
   </table>
   <button type="button" id="kwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+</div>
+
+<div class="pushbox">
+  <label class="chk"><input type="checkbox" id="p_pdupdown" {p_pdupdown}> 明珠在线项目上下线</label>
+  <div style="font-weight:600;margin:14px 0 6px">明珠在线特定词条房源变动（最多 10 个）</div>
+  <div class="muted" style="margin-bottom:8px">规则同随申办；逐条列出的命中项目，<b>勾选 = 忽略（不推送）</b>。</div>
+  <table class="kwtbl">
+    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
+    <tbody id="pdrows"></tbody>
+  </table>
+  <button type="button" id="pdadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+</div>
+
+<div class="pushbox">
+  <div style="font-weight:600;margin-bottom:6px">推送测试</div>
+  <div class="muted" style="margin-bottom:8px">按当前<b>已保存</b>的设置立即发送一条心跳推送（建议先保存再测试）。</div>
+  <button type="button" id="testpush" class="ghost">发送测试推送</button>
+  <span id="testpush_msg" class="muted" style="margin-left:10px"></span>
 </div>
 
 <input type="hidden" name="push_json" id="push_json">
@@ -636,21 +800,27 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
             pj = {}
         if not isinstance(pj, dict):
             pj = {}
-        rules, seen = [], set()
-        for r in (pj.get("keywords") or [])[:10]:
-            if not isinstance(r, dict):
-                continue
-            w = str(r.get("word", "")).strip()
-            if not w or w in seen:
-                continue
-            seen.add(w)
-            rules.append({"word": w, "new": bool(r.get("new")), "updown": bool(r.get("updown")),
-                          "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))})
+        def parse_rules(raw):
+            out, seen = [], set()
+            for r in (raw or [])[:10]:
+                if not isinstance(r, dict):
+                    continue
+                w = str(r.get("word", "")).strip()
+                if not w or w in seen:
+                    continue
+                seen.add(w)
+                out.append({"word": w, "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+                            "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))})
+            return out
+        rules = parse_rules(pj.get("keywords"))
+        pd_rules = parse_rules(pj.get("pd_keywords"))
         push_cfg = {
             "total_change": bool(pj.get("total_change")),
             "district_change": bool(pj.get("district_change")),
             "districts": [str(d) for d in (pj.get("districts") or []) if str(d).strip()],
             "keywords": rules,
+            "pd_updown": bool(pj.get("pd_updown")),
+            "pd_keywords": pd_rules,
         }
         kw_list = [r["word"] for r in rules]
     else:

@@ -24,6 +24,8 @@ DEFAULTS = {
         "district_change": False,
         "districts": [],
         "keywords": [],
+        "pd_updown": False,
+        "pd_keywords": [],
     },
 }
 
