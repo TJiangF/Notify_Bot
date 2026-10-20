@@ -922,6 +922,10 @@ function mapSuggest(){{
   mapSel=null;
   if(q.length<2){{ box.style.display='none'; return; }}
   fetch('/api/geosuggest?q='+encodeURIComponent(q)).then(function(r){{return r.json();}}).then(function(res){{
+    if(res&&res.ok===false){{
+      var mb=document.getElementById('map_msg'); if(mb) mb.textContent=res.msg||'查询失败';
+      box.style.display='none'; return;
+    }}
     var items=(res&&res.items)||[];
     if(!items.length){{ box.style.display='none'; return; }}
     items=items.slice(0,8); box.__items=items;

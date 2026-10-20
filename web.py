@@ -3,6 +3,7 @@ import sys
 import json
 import uuid
 import math
+import threading
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -24,6 +25,9 @@ DATA_DIR = os.path.join(BASE, "data")
 VISITS_FILE = os.path.join(DATA_DIR, "visits.json")
 USAGE_SB = os.path.join(DATA_DIR, "usage.json")
 USAGE_PD = os.path.join(DATA_DIR, "usage_pd.json")
+GEO_RATE_FILE = os.path.join(DATA_DIR, "georate.json")
+GEO_DAILY_LIMIT = int(os.environ.get("GEO_DAILY_LIMIT", "50"))
+_RATE_LOCK = threading.Lock()
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET)
@@ -64,13 +68,56 @@ def _hav_m(a, b):
     return int(2 * R * math.asin(math.sqrt(h)))
 
 
+def _client_ip(request):
+    xr = request.headers.get("x-real-ip", "")
+    if xr:
+        return xr.strip()
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_take(ip):
+    """该 IP 今日计数 +1；超限返回 False"""
+    today = datetime.now(BJ).strftime("%Y-%m-%d")
+    with _RATE_LOCK:
+        d = {}
+        if os.path.exists(GEO_RATE_FILE):
+            try:
+                d = json.load(open(GEO_RATE_FILE))
+            except Exception:
+                d = {}
+        if d.get("date") != today:
+            d = {"date": today, "ips": {}}
+        ips = d.setdefault("ips", {})
+        n = int(ips.get(ip, 0))
+        if n >= GEO_DAILY_LIMIT:
+            return False
+        ips[ip] = n + 1
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            json.dump(d, open(GEO_RATE_FILE, "w"), ensure_ascii=False)
+        except Exception:
+            pass
+        return True
+
+
+def _rate_msg():
+    return f"今日使用次数过多（每个 IP 每天 {GEO_DAILY_LIMIT} 次），请明天再试"
+
+
 @app.get("/api/geosuggest")
-def api_geosuggest(q: str = ""):
+def api_geosuggest(request: Request, q: str = ""):
+    if not _rate_take(_client_ip(request)):
+        return {"ok": False, "msg": _rate_msg(), "items": []}
     return {"ok": True, "items": geocode.suggest(q)}
 
 
 @app.get("/api/nearby")
-def api_nearby(q: str = "", n: int = 10, lng: float = 0.0, lat: float = 0.0):
+def api_nearby(request: Request, q: str = "", n: int = 10, lng: float = 0.0, lat: float = 0.0):
+    if not _rate_take(_client_ip(request)):
+        return {"ok": False, "msg": _rate_msg()}
     q = (q or "").strip()
     if lng and lat:
         origin = {"lng": lng, "lat": lat}
