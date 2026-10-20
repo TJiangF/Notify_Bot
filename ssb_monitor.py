@@ -433,16 +433,20 @@ def star(name):
 def _kw_map(cur_all, word):
     m = {}
     for it in cur_all:
-        if word in (it.get("projectName") or ""):
-            m[str(it["projectId"])] = {"online": it.get("onlineFlatNum") or 0,
-                                       "name": it.get("projectName")}
+        name = it.get("projectName") or it.get("name") or ""
+        if word in name:
+            pid = str(it.get("projectId") or it.get("id"))
+            online = it.get("onlineFlatNum")
+            if online is None:
+                online = it.get("online") or 0
+            m[pid] = {"online": online, "name": name}
     return m
 
 
 def project_snapshot(cur_all):
     dists = {}
     for it in cur_all:
-        d = it.get("districtName") or "未知"
+        d = it.get("districtName") or it.get("district") or "未知"
         dists[d] = dists.get(d, 0) + 1
     words = [(r.get("word") or "").strip() for r in PUSH.get("keywords", []) if (r.get("word") or "").strip()]
     return {"total": len(cur_all), "districts": dists,
