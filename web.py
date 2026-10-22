@@ -388,6 +388,7 @@ def index(request: Request, base: str = Query(None)):
         base_label=sel + " 12:00",
         auto_refresh=AUTO_REFRESH,
         user_name=uname, can_map=can_map, logged_in=bool(u), favorites=favs,
+        is_admin=_is_admin(request), admin_url=(ADMIN_PATH + "/logout"),
     )
     return HTMLResponse(html)
 
@@ -987,10 +988,11 @@ def render_account(request, u):
 <form method="post" action="/account">
   <label class="f">Server酱 SendKey（可粘贴完整链接，当前：{sc_hint}）</label>
   <input name="serverchan" placeholder="https://sctapi.ftqq.com/SCTxxxxx.send 或直接填 SendKey">
+  <div class="muted" style="margin-top:6px">还没有 SendKey？前往官方获取：<a href="https://sct.ftqq.com/" target="_blank" rel="noopener">https://sct.ftqq.com/</a>（登录后复制 SendKey 或推送链接）</div>
   <label class="f" style="margin-top:14px">心跳推送小时（最多选 3 个；推荐白天 8:00–22:00）</label>
   <div style="max-height:130px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
-  <div class="muted" style="margin-top:8px">一天最多 3 次心跳；加上特殊情况（Cookie 失效 / 限流 / 恢复）合计最多 5 次/天，具体推不推由你决定。</div>
-  <p><button style="margin-top:14px">保存</button> <button type="button" id="utest" class="ghost">发送测试推送</button> <span id="utest_msg" class="muted"></span></p>
+  <div class="muted" style="margin-top:8px">"心跳推送"=按上面所选整点自动推送；"立即推送一次"=马上手动发一条测试。一天最多 3 次心跳，加上特殊情况（Cookie 失效 / 限流 / 恢复）合计最多 5 次/天。</div>
+  <p><button style="margin-top:14px">保存</button> <button type="button" id="utest" class="ghost">立即推送一次（测试）</button> <span id="utest_msg" class="muted"></span></p>
 </form>
 <label class="f" style="margin-top:16px">我的收藏（{len(fav_items)}/5）</label>
 <div>{fav_html}</div>

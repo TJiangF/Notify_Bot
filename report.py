@@ -110,7 +110,8 @@ def _fmt_card(cur, prv):
 
 def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 cur_label="当前", base_label="上一份快照", auto_refresh=0,
-                user_name="", can_map=False, logged_in=False, favorites=None):
+                user_name="", can_map=False, logged_in=False, favorites=None,
+                is_admin=False, admin_url=""):
     ssb_ch = diff(prev["ssb"], latest["ssb"], "online")
     pd_ch = diff(prev["pd"], latest["pd"], "kzts")
     ssb_dist = district_stats(latest["ssb"], ssb_ch)
@@ -386,6 +387,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                   json.dumps(favorites or [], ensure_ascii=False)))
     if logged_in:
         user_area = f'<div class="sb-user">👤 {esc(user_name)} ｜ <a href="/account">账号</a> ｜ <a href="/logout">退出</a></div>'
+    elif is_admin:
+        user_area = f'<div class="sb-user">👑 管理员（后台已登录） ｜ <a href="{esc(admin_url or "/")}">退出后台</a></div>'
     else:
         user_area = '<div class="sb-user"><a href="/login">登录</a> ｜ <a href="/register">注册</a></div>'
 
@@ -469,8 +472,10 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .pdright{{color:#888;text-align:right;font-size:12px}}
  .cmp-add{{font-size:12px;padding:3px 10px;border:1px solid #2563eb;color:#2563eb;background:#fff;border-radius:14px;cursor:pointer;white-space:nowrap}}
  .cmp-add:hover{{background:#2563eb;color:#fff}}
- .cmp-fab{{position:fixed;right:18px;bottom:18px;z-index:90;background:#2563eb;color:#fff;border:0;border-radius:22px;padding:11px 18px;box-shadow:0 6px 18px rgba(37,99,235,.45);cursor:pointer;font-size:14px}}
+ .cmp-fab{{position:fixed;right:18px;bottom:18px;z-index:90;background:#2563eb;color:#fff;border:0;border-radius:26px;padding:14px 26px;box-shadow:0 6px 18px rgba(37,99,235,.45);cursor:pointer;font-size:15px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}}
  .cmp-fab:hover{{background:#1d4ed8}}
+ .push-fab{{bottom:80px;background:#0f9d58;box-shadow:0 6px 18px rgba(15,157,88,.45)}}
+ .push-fab:hover{{background:#0b8043}}
  .cmp{{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:92vw;height:90vh;z-index:100;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden}}
  .cmp.open{{display:flex}}
  .cmp-head{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #eef0f3;font-weight:600;font-size:15px}}
@@ -621,6 +626,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <table><thead><tr><th>日期</th><th>随申办项目</th><th>随申办在线</th><th>明珠项目</th><th>明珠可租</th></tr></thead>
 <tbody>{trend_table}</tbody></table>
 </div>
+<a class="cmp-fab push-fab" href="/account">🔔 推送设置</a>
 <button id="cmpFab" class="cmp-fab" onclick="toggleCompare()">对比 <span id="cmpFabN">0</span></button>
 <div id="cmpPanel" class="cmp">
   <div class="cmp-head"><span>对比清单 <span id="cmpN">0</span></span>
