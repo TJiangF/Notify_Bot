@@ -5,6 +5,8 @@ import uuid
 import math
 import html
 import threading
+import re
+import requests
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -17,6 +19,7 @@ import report  # noqa: E402
 import config as cfgmod  # noqa: E402
 import geocode  # noqa: E402
 import ssb_monitor as mon  # noqa: E402
+import users as U  # noqa: E402
 
 ADMIN_PATH = os.environ.get("SSB_ADMIN_PATH", "/admin")
 ADMIN_PW = os.environ.get("SSB_ADMIN_PASSWORD", "change-me")
@@ -58,7 +61,10 @@ def save_comments(d):
 
 @app.get("/api/comments")
 def api_comments(key: str = ""):
-    return load_comments().get(key, [])
+    lst = load_comments().get(key, [])
+    for c in lst:
+        c.setdefault("author", "admin")
+    return lst
 
 
 def _hav_m(a, b):
@@ -80,8 +86,28 @@ def _client_ip(request):
     return request.client.host if request.client else "unknown"
 
 
-def _rate_take(ip):
+GLOBAL_GEO_LIMIT = int(os.environ.get("GLOBAL_GEO_LIMIT", "5000"))
+SUGGEST_IP_LIMIT = int(os.environ.get("SUGGEST_IP_LIMIT", "300"))
+
+
+def _logged_user(request):
+    email = request.session.get("user")
+    if not email:
+        return None
+    return U.get_user(email)
+
+
+def _is_admin(request):
+    return bool(request.session.get("admin"))
+
+
+def _can_map(request):
+    return bool(_logged_user(request) or _is_admin(request))
+
+
+def _rate_take(ip, limit=None):
     """该 IP 今日计数 +1；超限返回 False"""
+    limit = limit or GEO_DAILY_LIMIT
     today = datetime.now(BJ).strftime("%Y-%m-%d")
     with _RATE_LOCK:
         d = {}
@@ -94,7 +120,7 @@ def _rate_take(ip):
             d = {"date": today, "ips": {}}
         ips = d.setdefault("ips", {})
         n = int(ips.get(ip, 0))
-        if n >= GEO_DAILY_LIMIT:
+        if n >= limit:
             return False
         ips[ip] = n + 1
         try:
@@ -105,21 +131,30 @@ def _rate_take(ip):
         return True
 
 
-def _rate_msg():
-    return f"今日使用次数过多（每个 IP 每天 {GEO_DAILY_LIMIT} 次），请明天再试"
+def _rate_msg(limit=None):
+    return f"今日使用次数过多（每个 IP 每天 {limit or GEO_DAILY_LIMIT} 次），请明天再试"
 
 
 @app.get("/api/geosuggest")
 def api_geosuggest(request: Request, q: str = ""):
-    if not _rate_take(_client_ip(request)):
-        return {"ok": False, "msg": _rate_msg(), "items": []}
+    if not _can_map(request):
+        return {"ok": False, "need_login": True, "msg": "登录后即可使用智能找房", "items": []}
+    if not _rate_take(_client_ip(request), SUGGEST_IP_LIMIT):
+        return {"ok": False, "msg": _rate_msg(SUGGEST_IP_LIMIT), "items": []}
     return {"ok": True, "items": geocode.suggest(q)}
 
 
 @app.get("/api/nearby")
 def api_nearby(request: Request, q: str = "", n: int = 10, lng: float = 0.0, lat: float = 0.0):
-    if not _rate_take(_client_ip(request)):
-        return {"ok": False, "msg": _rate_msg()}
+    u = _logged_user(request)
+    if not u and not _is_admin(request):
+        return {"ok": False, "need_login": True, "msg": "登录后即可使用智能找房"}
+    if not _is_admin(request):
+        ok, used, reason = U.quota_take(u["email"], 100, GLOBAL_GEO_LIMIT)
+        if not ok:
+            if reason == "global":
+                return {"ok": False, "msg": "今日全站高德查询已达上限，请明天再试"}
+            return {"ok": False, "msg": f"今日找房次数已用完（每人每天 100 次，已用 {used} 次），请明天再试"}
     q = (q or "").strip()
     if lng and lat:
         origin = {"lng": lng, "lat": lat}
@@ -255,29 +290,17 @@ def api_test_push(request: Request):
 
 
 @app.post("/api/comment")
-async def api_comment(key: str = Form(...), text: str = Form(""), images: list[UploadFile] = File(default=[])):
+async def api_comment(request: Request, key: str = Form(...), text: str = Form("")):
+    u = _logged_user(request)
+    if not u and not _is_admin(request):
+        return {"ok": False, "need_login": True, "msg": "请先登录后再评论"}
     text = (text or "").strip()
-    imgs = []
-    for uf in (images or []):
-        if not uf or not getattr(uf, "filename", ""):
-            continue
-        ext = os.path.splitext(uf.filename)[1].lower()
-        if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"):
-            ext = ".jpg"
-        try:
-            data = await uf.read()
-        except Exception:
-            continue
-        if not data or len(data) > 8 * 1024 * 1024:
-            continue
-        name = uuid.uuid4().hex + ext
-        with open(os.path.join(UPLOAD_DIR, name), "wb") as f:
-            f.write(data)
-        imgs.append(name)
-    if not text and not imgs:
-        return {"ok": False, "msg": "请输入文字或选择图片"}
+    if not text:
+        return {"ok": False, "msg": "请输入评论内容"}
+    author = "admin" if _is_admin(request) else ((u.get("name") if u else "") or (u.get("email") if u else "用户"))
     c = load_comments()
-    c.setdefault(key, []).append({"time": _now().strftime("%Y-%m-%d %H:%M"), "text": text[:2000], "images": imgs})
+    c.setdefault(key, []).append({"time": _now().strftime("%Y-%m-%d %H:%M"),
+                                  "text": text[:2000], "author": author, "images": []})
     save_comments(c)
     return {"ok": True}
 
@@ -354,12 +377,17 @@ def index(request: Request, base: str = Query(None)):
     valid = {b for b, _ in options}
     sel = base if (base in valid) else _pick_base(snaps, int(cfg.get("default_base_days", 1)))
     prev = next((s for s in snaps if s["date"] == sel), snaps[-1])
+    u = _logged_user(request)
+    can_map = bool(u or _is_admin(request))
+    uname = (u.get("name") if u else ("admin" if _is_admin(request) else ""))
+    favs = (u.get("favorites") if u else []) or []
     html = report.render_html(
         cur, prev, snaps,
         base_options=options, selected_base=sel,
         cur_label=report.fmt_dt(cur.get("generated_at", "")),
         base_label=sel + " 12:00",
         auto_refresh=AUTO_REFRESH,
+        user_name=uname, can_map=can_map, logged_in=bool(u), favorites=favs,
     )
     return HTMLResponse(html)
 
@@ -856,3 +884,489 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
     }
     cfgmod.save(cfg)
     return HTMLResponse(render_dashboard(request, msg="已保存，监控将在下一轮点位生效"))
+
+
+# ==================== 用户系统 ====================
+def _auth_page(title, body):
+    return ("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<title>" + esc(title) + "</title><style>" + ADMIN_CSS + "</style></head><body>"
+            "<div style=\"max-width:460px;margin:48px auto;background:#fff;padding:26px;border-radius:14px;"
+            "box-shadow:0 6px 24px rgba(16,24,40,.1)\"><h1 style=\"font-size:18px;margin:0 0 8px\">"
+            + esc(title) + "</h1>" + body + "</div></body></html>")
+
+
+def render_user_register(err="", email="", name=""):
+    err_html = f'<div style="color:#dc2626;font-size:13px;margin-bottom:10px">{esc(err)}</div>' if err else ""
+    body = f'''{err_html}
+<p class="muted" style="margin:0 0 14px">用邮箱注册。为安全与防攻击：每个 IP 每天限注册 1 个账号；暂未接入邮箱真实性验证，只校验格式与频率。</p>
+<form method="post" action="/register">
+  <label class="f">邮箱</label><input name="email" type="email" value="{esc(email)}" required>
+  <label class="f">昵称（可选）</label><input name="name" value="{esc(name)}">
+  <label class="f">密码（至少 6 位）</label><input name="pw" type="password" required>
+  <label class="f">确认密码</label><input name="pw2" type="password" required>
+  <p><button style="width:100%;margin-top:16px">注册</button></p>
+</form>
+<div class="muted" style="margin-top:14px">已有账号？<a href="/login">去登录</a>　｜　<a href="/">返回报表</a></div>'''
+    return _auth_page("注册", body)
+
+
+def render_user_login(err="", email=""):
+    err_html = f'<div style="color:#dc2626;font-size:13px;margin-bottom:10px">{esc(err)}</div>' if err else ""
+    body = f'''{err_html}
+<form method="post" action="/login">
+  <label class="f">邮箱</label><input name="email" type="email" value="{esc(email)}" required>
+  <label class="f">密码</label><input name="pw" type="password" required>
+  <p><button style="width:100%;margin-top:16px">登录</button></p>
+</form>
+<div class="muted" style="margin-top:14px">还没有账号？<a href="/register">去注册</a>　｜　<a href="/">返回报表</a></div>'''
+    return _auth_page("登录", body)
+
+
+def _extract_sc(s):
+    s = (s or "").strip()
+    m = re.search(r"(sctp\d+t[A-Za-z0-9]+|SCT[A-Za-z0-9]+)", s)
+    return m.group(1) if m else s
+
+
+def _send_sc(key, text):
+    key = (key or "").strip()
+    if not key:
+        return False
+    title = (text.splitlines()[0] if text else "房源提醒")[:32]
+    if key.startswith("sctp"):
+        m = re.match(r"sctp(\d+)t", key)
+        url = f"https://{m.group(1)}.push.ft07.com/send/{key}.send" if m else f"https://sctapi.ftqq.com/{key}.send"
+    else:
+        url = f"https://sctapi.ftqq.com/{key}.send"
+    try:
+        r = requests.post(url, data={"title": title, "desp": text}, timeout=15)
+        return r.ok
+    except Exception:
+        return False
+
+
+def _fav_items(keys):
+    cur = report.load_current()
+    idx = {}
+    for x in cur.get("ssb", []):
+        k = "ssb:" + str(x.get("id"))
+        idx[k] = {"key": k, "name": x.get("name"), "src": "随申办",
+                  "kz": f'{x.get("online") or 0} 套', "addr": x.get("addr") or "", "tel": x.get("tel") or "",
+                  "fields": {"租金": f'{x.get("rent_low")}~{x.get("rent_high")}', "户型": x.get("door_type") or "",
+                             "板块": x.get("district") or "",
+                             "供应": f'{x.get("supply_start") or ""}~{x.get("supply_end") or ""}',
+                             "受理": f'{x.get("accept_start") or ""}~{x.get("accept_end") or ""}',
+                             "介绍": x.get("intro") or ""}}
+    for x in cur.get("pd", []):
+        k = "pd:" + str(x.get("id"))
+        idx[k] = {"key": k, "name": x.get("name"), "src": "明珠在线",
+                  "kz": f'{x.get("kzts") or 0} 套', "addr": x.get("addr") or "", "tel": x.get("tel") or "",
+                  "fields": {"租金": x.get("price") or "", "地铁": "、".join(x.get("metro") or []),
+                             "板块": x.get("zone") or "", "状态": x.get("status") or "",
+                             "供应": x.get("supply_date") or "", "发布": x.get("release_time") or "", "介绍": ""}}
+    return [idx[k] for k in keys if k in idx]
+
+
+def render_account(request, u):
+    push = u.get("push") or {}
+    sc = push.get("serverchan", "")
+    sel_hours = set(int(h) for h in (push.get("hours") or []))
+    hour_checks = "".join(
+        f'<label class="chk" style="margin:2px 12px 2px 0"><input type="checkbox" name="hours" value="{h}"'
+        f'{" checked" if h in sel_hours else ""}> {h:02d}:00</label>'
+        for h in range(24))
+    fav_items = _fav_items(u.get("favorites") or [])
+    fav_html = "".join(
+        f'<div style="padding:6px 0;border-bottom:1px solid #eef0f3;font-size:13px"><b>{esc(it["name"])}</b> '
+        f'<span class="muted">{esc(it["src"])}｜{esc(it["addr"])}</span></div>'
+        for it in fav_items) or '<div class="muted">暂无收藏（在报表房源处点“加入比较”即收藏，最多 5 个）</div>'
+    sc_hint = (f"已设置（…{esc(sc[-4:])}）" if sc else "未设置")
+    body = f'''<p class="muted" style="margin:0 0 14px">账号：{esc(u.get("email"))}　昵称：{esc(u.get("name"))}　
+<a href="/logout">退出登录</a>　｜　<a href="/">返回报表</a></p>
+<form method="post" action="/account">
+  <label class="f">Server酱 SendKey（可粘贴完整链接，当前：{sc_hint}）</label>
+  <input name="serverchan" placeholder="https://sctapi.ftqq.com/SCTxxxxx.send 或直接填 SendKey">
+  <label class="f" style="margin-top:14px">心跳推送小时（最多选 3 个；推荐白天 8:00–22:00）</label>
+  <div style="max-height:130px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
+  <div class="muted" style="margin-top:8px">一天最多 3 次心跳；加上特殊情况（Cookie 失效 / 限流 / 恢复）合计最多 5 次/天，具体推不推由你决定。</div>
+  <p><button style="margin-top:14px">保存</button> <button type="button" id="utest" class="ghost">发送测试推送</button> <span id="utest_msg" class="muted"></span></p>
+</form>
+<label class="f" style="margin-top:16px">我的收藏（{len(fav_items)}/5）</label>
+<div>{fav_html}</div>
+<script>
+(function(){{
+  var b=document.getElementById('utest');
+  if(b) b.addEventListener('click', function(){{
+    b.disabled=true; var o=document.getElementById('utest_msg'); if(o) o.textContent='发送中…';
+    fetch('/api/user_test_push',{{method:'POST'}}).then(function(r){{return r.json();}}).then(function(d){{
+      if(o) o.textContent=(d&&d.msg)||'完成'; b.disabled=false;
+    }}).catch(function(){{ if(o) o.textContent='发送失败'; b.disabled=false; }});
+  }});
+}})();
+</script>'''
+    return _auth_page("我的账号", body)
+
+
+@app.get("/register", response_class=HTMLResponse)
+def user_register_page(request: Request):
+    if _logged_user(request):
+        return RedirectResponse("/account", status_code=303)
+    return HTMLResponse(render_user_register())
+
+
+@app.post("/register")
+def user_register(request: Request, email: str = Form(""), name: str = Form(""),
+                  pw: str = Form(""), pw2: str = Form("")):
+    email = email.strip().lower()
+    if not U.valid_email(email):
+        return HTMLResponse(render_user_register("邮箱格式不正确", email, name))
+    if len(pw) < 6:
+        return HTMLResponse(render_user_register("密码至少 6 位", email, name))
+    if pw != pw2:
+        return HTMLResponse(render_user_register("两次密码不一致", email, name))
+    if U.get_user(email):
+        return HTMLResponse(render_user_register("该邮箱已注册", email, name))
+    ip = _client_ip(request)
+    if not U.reg_allowed(ip):
+        return HTMLResponse(render_user_register("该 IP 今日注册次数已达上限，请明天再试", email, name))
+    U.create_user(email, pw, name)
+    U.reg_record(ip)
+    request.session["user"] = email
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def user_login_page(request: Request):
+    if _logged_user(request):
+        return RedirectResponse("/account", status_code=303)
+    return HTMLResponse(render_user_login())
+
+
+@app.post("/login")
+def user_login(request: Request, email: str = Form(""), pw: str = Form("")):
+    u = U.get_user(email)
+    if not u or not U.verify_pw(pw, u.get("salt", ""), u.get("pw", "")):
+        return HTMLResponse(render_user_login("邮箱或密码错误", email))
+    request.session["user"] = u["email"]
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/logout")
+def user_logout(request: Request):
+    request.session.pop("user", None)
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request):
+    u = _logged_user(request)
+    if not u:
+        return RedirectResponse("/login", status_code=303)
+    return HTMLResponse(render_account(request, u))
+
+
+@app.post("/account")
+def account_save(request: Request, serverchan: str = Form(""), hours: list[int] = Form(default=[])):
+    u = _logged_user(request)
+    if not u:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        hs = sorted({int(h) for h in (hours or []) if 0 <= int(h) <= 23})[:3]
+    except Exception:
+        hs = []
+    old_key = (u.get("push") or {}).get("serverchan", "")
+    key = _extract_sc(serverchan) or old_key
+    U.update_user(u["email"], push={"serverchan": key, "hours": hs})
+    return RedirectResponse("/account", status_code=303)
+
+
+@app.get("/api/favorites")
+def api_favorites(request: Request):
+    u = _logged_user(request)
+    if not u:
+        return {"ok": False, "items": [], "msg": "请先登录"}
+    return {"ok": True, "items": _fav_items(u.get("favorites") or [])}
+
+
+@app.post("/api/favorite")
+def api_favorite(request: Request, key: str = Form(...), remove: int = Form(0)):
+    u = _logged_user(request)
+    if not u:
+        return {"ok": False, "need_login": True, "msg": "请先登录"}
+    if remove:
+        U.remove_favorite(u["email"], key)
+        return {"ok": True}
+    ok, msg = U.add_favorite(u["email"], key, 5)
+    return {"ok": ok, "msg": msg}
+
+
+@app.post("/api/user_test_push")
+def api_user_test_push(request: Request):
+    u = _logged_user(request)
+    if not u:
+        return {"ok": False, "msg": "请先登录"}
+    key = (u.get("push") or {}).get("serverchan", "")
+    if not key:
+        return {"ok": False, "msg": "请先填写 Server酱 SendKey 并保存"}
+    ok, n = U.push_take(u["email"], 5)
+    if not ok:
+        return {"ok": False, "msg": "今日推送次数已达 5 次上限"}
+    text = "【房源监控·测试推送】\n时间：" + U.now_bj().strftime("%Y-%m-%d %H:%M") + "\n收到此消息即表示你的 Server酱 配置成功。"
+    sent = _send_sc(key, text)
+    return {"ok": sent, "msg": "已发送，请查收" if sent else "发送失败，请检查 SendKey"}
+
+
+# ================= 用户系统（dev） =================
+
+def _extract_sc(s):
+    s = (s or "").strip()
+    m = re.search(r"(sctp\d+t[A-Za-z0-9]+|SCT[A-Za-z0-9]+)", s)
+    return m.group(1) if m else s
+
+
+def _send_sc(key, text):
+    title = (text.splitlines()[0] if text else "房源提醒")[:32]
+    if key.startswith("sctp"):
+        m = re.match(r"sctp(\d+)t", key)
+        url = f"https://{m.group(1)}.push.ft07.com/send/{key}.send" if m else f"https://sctapi.ftqq.com/{key}.send"
+    else:
+        url = f"https://sctapi.ftqq.com/{key}.send"
+    try:
+        return requests.post(url, data={"title": title, "desp": text}, timeout=15).ok
+    except Exception:
+        return False
+
+
+def _user_shell(title, inner):
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
+<style>{ADMIN_CSS}</style></head><body>
+<div class="top"><h1>{title}</h1><a href="/">返回报表</a></div>
+<div class="wrap">{inner}</div></body></html>"""
+
+
+def render_register(err="", email="", name=""):
+    inner = f"""
+<div style="max-width:420px;margin:26px auto;background:#fff;padding:22px;border-radius:14px;box-shadow:0 6px 24px rgba(16,24,40,.08)">
+<h2 style="margin:0 0 6px">注册账号</h2>
+<div class="muted" style="margin-bottom:12px">出于安全考虑（防止网站被攻击），仅支持邮箱注册；同一 IP 每天限注册 1 个。暂未接入邮箱真伪验证，仅做格式与频率校验。</div>
+{(f'<div style="color:#dc2626;font-size:13px;margin-bottom:8px">{esc(err)}</div>') if err else ''}
+<form method="post" action="/register">
+<label class="f">邮箱</label><input name="email" type="email" value="{esc(email)}" required>
+<label class="f">昵称（可选）</label><input name="name" value="{esc(name)}" placeholder="展示在评论中">
+<label class="f">密码（至少 6 位）</label><input name="pw" type="password" required>
+<label class="f">确认密码</label><input name="pw2" type="password" required>
+<p><button style="width:100%;margin-top:14px">注册</button></p>
+</form>
+<div class="muted" style="margin-top:10px">已有账号？<a href="/login">去登录</a></div>
+</div>"""
+    return _user_shell("注册", inner)
+
+
+def render_login_user(err="", email=""):
+    inner = f"""
+<div style="max-width:380px;margin:60px auto;background:#fff;padding:22px;border-radius:14px;box-shadow:0 6px 24px rgba(16,24,40,.08)">
+<h2 style="margin:0 0 12px">登录</h2>
+{(f'<div style="color:#dc2626;font-size:13px;margin-bottom:8px">{esc(err)}</div>') if err else ''}
+<form method="post" action="/login">
+<label class="f">邮箱</label><input name="email" type="email" value="{esc(email)}" required>
+<label class="f">密码</label><input name="pw" type="password" required>
+<p><button style="width:100%;margin-top:14px">登录</button></p>
+</form>
+<div class="muted" style="margin-top:10px">还没有账号？<a href="/register">注册</a></div>
+</div>"""
+    return _user_shell("登录", inner)
+
+
+def _fav_items(cur, keys):
+    ssb = {"ssb:" + str(x.get("id")): x for x in cur.get("ssb", [])}
+    pdd = {"pd:" + str(x.get("id")): x for x in cur.get("pd", [])}
+    out = []
+    for k in keys or []:
+        if k in ssb:
+            x = ssb[k]
+            out.append({"key": k, "name": x.get("name"), "src": "随申办", "kz": f'{x.get("online")} 套',
+                        "addr": x.get("addr") or "", "tel": x.get("tel") or "",
+                        "fields": {"租金": f'{x.get("rent_low")}~{x.get("rent_high")}', "户型": x.get("door_type") or "",
+                                   "板块": x.get("district") or "", "介绍": x.get("intro") or ""}})
+        elif k in pdd:
+            x = pdd[k]
+            out.append({"key": k, "name": x.get("name"), "src": "明珠在线", "kz": f'{x.get("kzts")} 套',
+                        "addr": x.get("addr") or "", "tel": x.get("tel") or "",
+                        "fields": {"租金": x.get("price") or "", "地铁": "、".join(x.get("metro") or []),
+                                   "板块": x.get("zone") or "", "状态": x.get("status") or "", "介绍": ""}})
+    return out
+
+
+def render_account(u, msg=""):
+    key = (u.get("push") or {}).get("serverchan", "")
+    hrs = set((u.get("push") or {}).get("hours") or [])
+    masked = ("已设置（末位 " + key[-4:] + "）") if key else ""
+    boxes = "".join(
+        f'<label class="chk"><input type="checkbox" class="hourbox" name="hours" value="{h}"{" checked" if h in hrs else ""}> {h:02d}:00</label>'
+        for h in range(24))
+    cur = report.load_current()
+    favs = _fav_items(cur, u.get("favorites") or [])
+    fav_rows = "".join(
+        f'<li data-key="{esc(f["key"])}">{esc(f["name"])} <span class="muted">（{esc(f["src"])}）</span> '
+        f'<button type="button" class="ghost favdel" data-key="{esc(f["key"])}">移除</button></li>'
+        for f in favs) or '<li class="muted">还没有收藏（在报表房源上点“加入比较”即收藏，最多 5 个）</li>'
+    inner = f"""
+<div style="max-width:760px;margin:20px auto;background:#fff;padding:22px;border-radius:14px;box-shadow:0 6px 24px rgba(16,24,40,.08)">
+<h2 style="margin:0 0 6px">我的账户</h2>
+<div class="muted" style="margin-bottom:14px">邮箱：{esc(u.get("email"))}　｜　昵称：{esc(u.get("name"))}　｜　<a href="/logout">退出登录</a></div>
+{(f'<div class="ok">{esc(msg)}</div>') if msg else ''}
+
+<h3 style="margin:18px 0 6px">Server酱 推送</h3>
+<div class="muted" style="margin-bottom:6px">暂时只支持 Server酱（不支持企业微信）。粘贴你收到的 Server酱 链接或 SendKey 即可。{('　当前：'+masked) if masked else ''}</div>
+<form method="post" action="/account">
+<label class="f">Server酱 链接 / SendKey</label>
+<input name="serverchan" placeholder="https://sctapi.ftqq.com/SCTxxxxx.send 或 sctp...t...">
+<div class="muted" style="margin:14px 0 4px">心跳推送整点（最多选 3 个；推荐白天 08:00–22:00。含特殊情况推送合计每天最多 5 次）</div>
+<div style="display:flex;flex-wrap:wrap;gap:2px">{boxes}</div>
+<p style="margin-top:16px"><button>保存</button>
+<button type="button" id="utest" class="ghost" style="margin-left:10px">发送测试推送</button>
+<span id="utestmsg" class="muted" style="margin-left:10px"></span></p>
+</form>
+
+<h3 style="margin:22px 0 6px">我的收藏（{len(favs)}/5）</h3>
+<div class="muted" style="margin-bottom:6px">收藏会出现在报表右下角的“对比”里，仅供你自己查看。</div>
+<ul id="favlist" style="padding-left:18px">{fav_rows}</ul>
+</div>
+<script>
+(function(){{
+  var boxes=document.querySelectorAll('.hourbox');
+  function cap(){{ var sel=document.querySelectorAll('.hourbox:checked'); if(sel.length>3){{ this.checked=false; }} }}
+  boxes.forEach(function(b){{ b.addEventListener('change', function(){{ var sel=document.querySelectorAll('.hourbox:checked'); if(sel.length>3){{ b.checked=false; alert('最多选 3 个心跳整点'); }} }}); }});
+  var t=document.getElementById('utest');
+  if(t) t.addEventListener('click', function(){{
+    t.disabled=true; var o=document.getElementById('utestmsg'); o.textContent='发送中…';
+    fetch('/api/user_test_push',{{method:'POST'}}).then(function(r){{return r.json();}}).then(function(d){{ o.textContent=(d&&d.msg)||'失败'; t.disabled=false; }}).catch(function(){{ o.textContent='失败'; t.disabled=false; }});
+  }});
+  document.querySelectorAll('.favdel').forEach(function(b){{
+    b.addEventListener('click', function(){{
+      var k=b.getAttribute('data-key');
+      fetch('/api/favorite',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'key='+encodeURIComponent(k)+'&remove=1'}})
+        .then(function(r){{return r.json();}}).then(function(){{ location.reload(); }});
+    }});
+  }});
+}})();
+</script>"""
+    return _user_shell("我的账户", inner)
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    if _logged_user(request):
+        return RedirectResponse("/account", status_code=303)
+    return HTMLResponse(render_register())
+
+
+@app.post("/register", response_class=HTMLResponse)
+def register_post(request: Request, email: str = Form(""), pw: str = Form(""), pw2: str = Form(""), name: str = Form("")):
+    ip = _client_ip(request)
+    email = (email or "").strip().lower()
+    if not U.valid_email(email):
+        return HTMLResponse(render_register("邮箱格式不正确", email, name))
+    if len(pw or "") < 6:
+        return HTMLResponse(render_register("密码至少 6 位", email, name))
+    if pw != pw2:
+        return HTMLResponse(render_register("两次密码不一致", email, name))
+    if U.get_user(email):
+        return HTMLResponse(render_register("该邮箱已注册", email, name))
+    if not U.reg_allowed(ip):
+        return HTMLResponse(render_register("该 IP 今天已注册过账号，请明天再试", email, name))
+    u = U.create_user(email, pw, name)
+    U.reg_record(ip)
+    request.session["user"] = u["email"]
+    return RedirectResponse("/account", status_code=303)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if _logged_user(request):
+        return RedirectResponse("/account", status_code=303)
+    return HTMLResponse(render_login_user())
+
+
+@app.post("/login", response_class=HTMLResponse)
+def login_post(request: Request, email: str = Form(""), pw: str = Form("")):
+    u = U.get_user(email)
+    if not u or not U.verify_pw(pw or "", u["salt"], u["pw"]):
+        return HTMLResponse(render_login_user("邮箱或密码错误", email))
+    request.session["user"] = u["email"]
+    return RedirectResponse("/account", status_code=303)
+
+
+@app.get("/logout")
+def logout(request: Request):
+    request.session.pop("user", None)
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request):
+    u = _logged_user(request)
+    if not u:
+        return RedirectResponse("/login", status_code=303)
+    return HTMLResponse(render_account(u))
+
+
+@app.post("/account", response_class=HTMLResponse)
+def account_save(request: Request, serverchan: str = Form(""), hours: list[str] = Form(default=[])):
+    u = _logged_user(request)
+    if not u:
+        return RedirectResponse("/login", status_code=303)
+    push = dict(u.get("push") or {})
+    if (serverchan or "").strip():
+        push["serverchan"] = _extract_sc(serverchan)
+    hs = []
+    for x in hours:
+        try:
+            h = int(x)
+        except Exception:
+            continue
+        if 0 <= h <= 23 and h not in hs:
+            hs.append(h)
+    push["hours"] = sorted(hs)[:3]
+    U.update_user(u["email"], push=push)
+    return HTMLResponse(render_account(U.get_user(u["email"]), "已保存"))
+
+
+@app.get("/api/favorites")
+def api_favorites(request: Request):
+    u = _logged_user(request)
+    if not u:
+        return {"ok": False, "need_login": True, "items": []}
+    cur = report.load_current()
+    return {"ok": True, "items": _fav_items(cur, u.get("favorites") or []), "max": 5}
+
+
+@app.post("/api/favorite")
+def api_favorite(request: Request, key: str = Form(...), remove: int = Form(0)):
+    u = _logged_user(request)
+    if not u:
+        return {"ok": False, "need_login": True, "msg": "请先登录"}
+    if remove:
+        U.remove_favorite(u["email"], key)
+        return {"ok": True}
+    ok, msg = U.add_favorite(u["email"], key, 5)
+    return {"ok": ok, "msg": msg}
+
+
+@app.post("/api/user_test_push")
+def api_user_test_push(request: Request):
+    u = _logged_user(request)
+    if not u:
+        return {"ok": False, "msg": "请先登录"}
+    key = (u.get("push") or {}).get("serverchan", "")
+    if not key:
+        return {"ok": False, "msg": "请先填写 Server酱 SendKey"}
+    ok, n = U.push_take(u["email"], 5)
+    if not ok:
+        return {"ok": False, "msg": "今日推送次数已用完（含心跳共 5 次）"}
+    text = ("【房源监控 · 测试推送】\n这是一条测试消息。\n时间：" + _now().strftime("%Y-%m-%d %H:%M")
+            + f"\n（今日已用推送 {n}/5）")
+    sent = _send_sc(key, text)
+    return {"ok": sent, "msg": ("已发送（今日 %d/5）" % n) if sent else "发送失败，请检查 SendKey"}

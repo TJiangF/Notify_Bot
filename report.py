@@ -109,7 +109,8 @@ def _fmt_card(cur, prv):
 
 
 def render_html(latest, prev, snaps, base_options=None, selected_base=None,
-                cur_label="当前", base_label="上一份快照", auto_refresh=0):
+                cur_label="当前", base_label="上一份快照", auto_refresh=0,
+                user_name="", can_map=False, logged_in=False, favorites=None):
     ssb_ch = diff(prev["ssb"], latest["ssb"], "online")
     pd_ch = diff(prev["pd"], latest["pd"], "kzts")
     ssb_dist = district_stats(latest["ssb"], ssb_ch)
@@ -358,6 +359,36 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     else:
         stale_banner = ""
 
+    if can_map:
+        map_block = """<div class="box">
+  <div class="mapsearch">
+    <div class="mapsb">
+      <input id="map_q" placeholder="输入上海地址或地标，如：人民广场 / 张江科学之门 / 某路某弄" autocomplete="off">
+      <div id="map_sug" class="mapsug"></div>
+    </div>
+    <button type="button" onclick="doFind()">找附近房源</button>
+    <span id="map_msg" class="muted"></span>
+  </div>
+  <div id="amap" class="amap"></div>
+  <div id="map_list" class="maplist"></div>
+</div>"""
+        amap_script = '<script src="https://webapi.amap.com/maps?v=1.4.15&key=c226df9a44846d549b4f1689ece31e5"></script>'
+    else:
+        map_block = """<div class="mapgate">
+  <div class="mapgate-ico">🔒</div>
+  <div>登录后即可使用「智能找房」（按地址找最近房源）</div>
+  <div style="margin-top:12px"><a class="btn" href="/login">登录</a> <a class="btn ghost" href="/register">免费注册</a></div>
+</div>"""
+        amap_script = ""
+    js_vars = ("var CAN_MAP=%d; var LOGGED_IN=%d; var USER_NAME=%s; var FAV_KEYS=%s;"
+               % (1 if can_map else 0, 1 if logged_in else 0,
+                  json.dumps(user_name or "", ensure_ascii=False),
+                  json.dumps(favorites or [], ensure_ascii=False)))
+    if logged_in:
+        user_area = f'<div class="sb-user">👤 {esc(user_name)} ｜ <a href="/account">账号</a> ｜ <a href="/logout">退出</a></div>'
+    else:
+        user_area = '<div class="sb-user"><a href="/login">登录</a> ｜ <a href="/register">注册</a></div>'
+
     return f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">{meta}
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -491,6 +522,12 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .mapsug .sg-n{{font-weight:600;font-size:13px}}
  .mapsug .sg-a{{color:#8794a8;font-size:12px;margin-top:1px}}
  .amap{{height:460px;border-radius:10px;margin-top:10px;background:#eef1f5}}
+ .mapgate{{height:300px;border-radius:10px;margin-top:10px;background:#eef1f5;border:1px dashed #c7d0dc;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8794a8;font-size:14px;gap:6px;text-align:center}}
+ .mapgate-ico{{font-size:30px}}
+ .btn{{display:inline-block;background:#2563eb;color:#fff;border-radius:8px;padding:8px 18px;font-size:14px;text-decoration:none}}
+ .btn.ghost{{background:#fff;color:#2563eb;border:1px solid #bfd3ff}}
+ .sb-user{{font-size:13px;color:#666;margin:4px 0 10px;line-height:1.7}}
+ .sb-user a{{color:#2563eb;text-decoration:none}}
  .maplist{{margin-top:12px}}
  .mapitem{{display:flex;gap:10px;padding:8px 4px;border-bottom:1px solid #eef0f3;align-items:flex-start}}
  .mapidx{{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#2563eb;color:#fff;text-align:center;line-height:22px;font-size:12px}}
@@ -500,6 +537,12 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .maptag.tag-pd{{background:#f59e0b}}
  .mapmeta{{font-size:12px;color:#666;margin-top:2px}}
  .muted{{color:#8794a8}}
+ .mapgate{{height:300px;border-radius:10px;margin-top:10px;background:#eef1f5;border:1px dashed #c7d0dc;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8794a8;font-size:14px;gap:6px;text-align:center}}
+ .mapgate-ico{{font-size:30px}}
+ .btn{{display:inline-block;background:#2563eb;color:#fff;border-radius:8px;padding:8px 18px;font-size:14px;text-decoration:none}}
+ .btn.ghost{{background:#fff;color:#2563eb;border:1px solid #bfd3ff}}
+ .sb-user{{font-size:12px;color:#667085;margin:4px 0 8px;line-height:1.7}}
+ .sb-user a{{color:#2563eb;text-decoration:none}}
  @media (max-width:640px){{
    .wrap{{padding:12px}}
    h1{{font-size:19px}}
@@ -514,6 +557,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <div id="sidebar"><div class="sb-inner">
 <button class="sb-toggle" onclick="toggleNav()">«</button>
 <div class="sb-title">章节</div>
+{user_area}
+{user_area}
 <a class="sb-link" href="#sec-top">概览</a>
 <a class="sb-link" href="#sec-map">智能找房</a>
 <a class="sb-link" href="#sec-notice">供应预告</a>
@@ -536,18 +581,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 </div>
 
 <h2 id="sec-map">🧭 智能找房</h2>
-<div class="box">
-  <div class="mapsearch">
-    <div class="mapsb">
-      <input id="map_q" placeholder="输入上海地址或地标，如：人民广场 / 张江科学之门 / 某路某弄" autocomplete="off">
-      <div id="map_sug" class="mapsug"></div>
-    </div>
-    <button type="button" onclick="doFind()">找附近房源</button>
-    <span id="map_msg" class="muted"></span>
-  </div>
-  <div id="amap" class="amap"></div>
-  <div id="map_list" class="maplist"></div>
-</div>
+{map_block}
 
 <h2 id="sec-notice">随申办 · 供应预告（{len(notice)}）</h2>
 <table><thead><tr><th>项目</th><th>计划供应日</th><th>租金</th><th>地址</th><th>电话</th><th>运营单位</th></tr></thead>
@@ -598,8 +632,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     <div id="cmpEmpty" class="cmp-empty">还没有加入对比的房源</div>
   </div>
 </div>
-<script src="https://webapi.amap.com/maps?v=1.4.15&key=c226df9a44846d549b4f1689ece31e5"></script>
+{amap_script}
 <script>
+{js_vars}
 function filterSb(){{
   var mn=parseFloat((document.getElementById('sb_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
   var mx=parseFloat((document.getElementById('sb_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
@@ -782,11 +817,7 @@ var compareList=[];
 try{{ var _c=localStorage.getItem('cmp_list'); if(_c) compareList=JSON.parse(_c)||[]; }}catch(e){{}}
 function cmpSave(){{ try{{ localStorage.setItem('cmp_list', JSON.stringify(compareList)); }}catch(e){{}} }}
 function cmpKeyOf(li){{
-  var name=li.getAttribute('data-name')||'';
-  var src=li.closest('#sblist')?'随申办':'明珠在线';
-  var right=((li.querySelector('.pdright')||{{}}).textContent||'').trim();
-  var addr=(right.split('·')[0]||'').trim();
-  return src+'|'+name+'|'+addr;
+  return li.getAttribute('data-key') || '';
 }}
 function afterCmpChange(){{ cmpSave(); renderCompare(); syncCompareButtons(); }}
 function syncCompareButtons(){{
@@ -796,7 +827,7 @@ function syncCompareButtons(){{
     b.textContent = compareList.some(function(x){{ return x.key===k; }}) ? '已加入' : '加入比较';
   }});
 }}
-function removeCompareAt(idx){{ compareList.splice(idx,1); afterCmpChange(); }}
+function removeCompareAt(idx){{ var it=compareList[idx]; compareList.splice(idx,1); afterCmpChange(); if(LOGGED_IN&&it&&it.key){{ fetch('/api/favorite',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'key='+encodeURIComponent(it.key)+'&remove=1'}}); }} }}
 function addCompare(ev, btn){{
   if(ev) ev.stopPropagation();
   var li=btn.closest('.pditem'); if(!li) return;
@@ -816,6 +847,11 @@ function addCompare(ev, btn){{
   }});
   compareList.push({{key:key,name:name,src:src,kz:kz,addr:addr,tel:tel,fields:fields}});
   afterCmpChange();
+  if(LOGGED_IN){{
+    fetch('/api/favorite',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'key='+encodeURIComponent(key)}}).then(function(r){{return r.json();}}).then(function(d){{
+      if(!d||!d.ok){{ alert((d&&d.msg)||'收藏失败'); compareList=compareList.filter(function(x){{return x.key!==key;}}); afterCmpChange(); }}
+    }}).catch(function(){{}});
+  }}
 }}
 var CMP_COLS=["套数","租金","户型","地铁","板块","状态","供应","受理","发布","地址","电话","介绍"];
 function renderCompare(){{
@@ -865,6 +901,16 @@ document.addEventListener('drop', function(e){{
 function toggleCompare(){{ var p=document.getElementById('cmpPanel'); if(p) p.classList.toggle('open'); }}
 function clearCompare(){{ compareList=[]; afterCmpChange(); }}
 renderCompare(); syncCompareButtons();
+if(LOGGED_IN){{
+  fetch('/api/favorites').then(function(r){{return r.json();}}).then(function(d){{
+    if(d&&d.ok&&d.items){{ compareList=d.items; afterCmpChange(); }}
+  }}).catch(function(){{}});
+}}
+if(LOGGED_IN){{
+  fetch('/api/favorites').then(function(r){{return r.json();}}).then(function(d){{
+    if(d&&d.ok&&d.items){{ compareList=d.items; afterCmpChange(); }}
+  }}).catch(function(){{}});
+}}
 function jesc(t){{ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }}
 function loadComments(c){{
   if(!c || c.dataset.loaded) return;
@@ -879,20 +925,23 @@ function renderComments(c, key, list){{
   var h='<div class="cmt-title">评论 '+list.length+'</div>';
   if(!list.length) h+='<div class="cmt-empty">还没有评论，来写第一条吧</div>';
   list.forEach(function(cm){{
-    h+='<div class="cmt"><div class="cmt-meta">'+(cm.time||'')+'</div>';
+    var who=cm.author||'admin';
+    h+='<div class="cmt"><div class="cmt-meta">'+jesc(who)+' · '+(cm.time||'')+'</div>';
     if(cm.text) h+='<div class="cmt-text">'+jesc(cm.text)+'</div>';
     if(cm.images&&cm.images.length){{ h+='<div class="cmt-imgs">'; cm.images.forEach(function(im){{ h+='<a href="/uploads/'+encodeURIComponent(im)+'" target="_blank"><img src="/uploads/'+encodeURIComponent(im)+'" loading="lazy"></a>'; }}); h+='</div>'; }}
     h+='</div>';
   }});
   c.innerHTML=h;
+  if(!LOGGED_IN){{
+    var tip=document.createElement('div'); tip.className='cmt-hint'; tip.innerHTML='<a href="/login">登录</a> 后可评论'; c.appendChild(tip); return;
+  }}
   var form=document.createElement('div'); form.className='cmt-form';
-  form.innerHTML='<textarea rows="2" placeholder="写点对这套房源的描述 / 看房感受…"></textarea><div class="cmt-row"><input type="file" accept="image/*" multiple><button type="button" class="cmt-send">发布</button></div><div class="cmt-hint"></div>';
+  form.innerHTML='<textarea rows="2" placeholder="写点对这套房源的描述 / 看房感受…"></textarea><div class="cmt-row"><button type="button" class="cmt-send">发布</button></div><div class="cmt-hint"></div>';
   c.appendChild(form);
-  var ta=form.querySelector('textarea'), fi=form.querySelector('input[type=file]'), btn=form.querySelector('.cmt-send'), hint=form.querySelector('.cmt-hint');
+  var ta=form.querySelector('textarea'), btn=form.querySelector('.cmt-send'), hint=form.querySelector('.cmt-hint');
   btn.addEventListener('click', function(){{
-    if(!ta.value.trim() && !fi.files.length){{ hint.textContent='请输入文字或选择图片'; return; }}
+    if(!ta.value.trim()){{ hint.textContent='请输入评论内容'; return; }}
     var fd=new FormData(); fd.append('key',key); fd.append('text',ta.value);
-    for(var i=0;i<fi.files.length;i++) fd.append('images', fi.files[i]);
     btn.disabled=true; hint.textContent='发布中…';
     fetch('/api/comment',{{method:'POST',body:fd}}).then(function(r){{return r.json();}}).then(function(res){{
       if(res&&res.ok){{ c.dataset.loaded=''; loadComments(c); }} else {{ btn.disabled=false; hint.textContent=(res&&res.msg)||'发布失败'; }}
@@ -996,7 +1045,7 @@ window.addEventListener('load', function(){{
     if(box && (!e.target.closest || !e.target.closest('.mapsb'))) box.style.display='none';
   }});
   var m=(location.search.match(/[?&]q=([^&]*)/));
-  if(m){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
+  if(m && mq){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
 }});
 </script>
 </body></html>"""
