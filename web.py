@@ -16,6 +16,7 @@ sys.path.insert(0, BASE)
 import report  # noqa: E402
 import config as cfgmod  # noqa: E402
 import geocode  # noqa: E402
+import houses as hxmod  # noqa: E402
 import ssb_monitor as mon  # noqa: E402
 
 ADMIN_PATH = os.environ.get("SSB_ADMIN_PATH", "/admin")
@@ -197,6 +198,54 @@ def _sync_mon():
     mon.IGNORE = c.get("ignore", {}) or {}
     mon.WEBHOOK = c.get("wecom_webhook", "") or ""
     mon.SERVERCHAN_KEY = c.get("serverchan_key", "") or ""
+
+
+@app.get("/api/hx")
+def api_hx(projectId: str = ""):
+    pid = (projectId or "").strip()
+    if not pid:
+        return {"ok": False, "msg": "缺少 projectId"}
+    rec = hxmod.load_cache().get(pid)
+    if not rec:
+        return {"ok": False, "cached": False, "msg": "该项目房源明细尚未采集"}
+    return hxmod.summary(pid)
+
+
+@app.get("/api/hxhouses")
+def api_hxhouses(projectId: str = "", dt: str = "", free: int = 0, limit: int = 200, offset: int = 0):
+    pid = (projectId or "").strip()
+    rec = hxmod.load_cache().get(pid)
+    if not rec:
+        return {"ok": False, "cached": False, "msg": "该项目房源明细尚未采集", "rows": []}
+    rows = hxmod.rows(pid, dt=dt, only_free=bool(free), limit=limit, offset=offset)
+    return {"ok": True, "rows": rows}
+
+
+@app.get("/hximg/{fid}")
+def hximg(fid: str):
+    p = hxmod.img_path(fid)
+    if not p:
+        return HTMLResponse(status_code=404)
+    from fastapi.responses import Response
+    return Response(content=open(p, "rb").read(), media_type="image/jpeg")
+
+
+@app.post("/api/hxcollect")
+def api_hxcollect(request: Request, projectId: str = Form("")):
+    if not request.session.get("admin"):
+        return {"ok": False, "msg": "仅管理员可采集"}
+    pid = (projectId or "").strip()
+    if not pid:
+        return {"ok": False, "msg": "缺少 projectId"}
+    try:
+        info = hxmod.collect(pid)
+    except Exception as e:
+        return {"ok": False, "msg": f"采集失败：{type(e).__name__}: {e}"}
+    sample = hxmod.pick_sample(pid, 10, 5)
+    det = hxmod.collect_details(pid, [str(h.get("houseId")) for h in sample])
+    ph = hxmod.collect_photos(pid)
+    return {"ok": True, "houses": len(info["houses"]), "total": info["total"],
+            "details": len(det), "photos": ph}
 
 
 @app.get("/api/sb_status")

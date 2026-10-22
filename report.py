@@ -248,8 +248,14 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 f'<div class="pdcell"><b>户型</b>{esc("、".join(dts)) or "—"}</div>'
                 f'<div class="pdcell"><b>供应</b>{esc(supply)}</div>'
                 f'<div class="pdcell"><b>受理</b>{esc(accept)}</div>'
-                f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
-                f'</div><div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div></li>')
+                 f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
+                 f'</div>'
+                 f'<div class="hxwrap" data-pid="{esc(str(x.get("id")))}" data-name="{esc(x["name"]) }">'
+                 f'<div class="hxstate muted">户型与房源明细（面积/门牌/整合租/租金/状态/库存）</div>'
+                 f'<div class="hxbox"></div>'
+                 f'<button type="button" class="hxbtn ghost">查看该项目的户型与房源明细</button>'
+                 f'</div>'
+                 f'<div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div></li>')
         ssb_items = "".join(sitems)
         pd = latest["pd"]
         metros = sorted({m.split("/")[0].strip() for x in pd for m in (x.get("metro") or []) if m})
@@ -481,6 +487,27 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .cmt-send{{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;white-space:nowrap}}
  .cmt-send:disabled{{opacity:.6;cursor:default}}
  .cmt-hint{{font-size:12px;color:#e11d48;margin-top:4px}}
+ .hxwrap{{margin-top:10px;padding:10px;border:1px solid #e6eaf2;border-radius:10px;background:#fafbff}}
+ .hxwrap .hxbtn{{margin-top:8px}}
+ .hxstate{{font-size:12px}}
+ .hxbox{{margin-top:8px}}
+ .hxcard{{display:inline-flex;flex-direction:column;gap:6px;width:210px;border:1px solid #dbe3f2;border-radius:10px;padding:10px;background:#fff;cursor:pointer;vertical-align:top;margin:4px;transition:box-shadow .15s}}
+ .hxcard:hover{{box-shadow:0 4px 16px rgba(37,99,235,.18)}}
+ .hxcard .hxt{{font-weight:600;font-size:13px}}
+ .hxcard .hxmeta{{font-size:12px;color:#667085;line-height:1.6}}
+ .hxcard .hximg{{width:100%;height:110px;object-fit:contain;border-radius:8px;background:#f2f5fb}}
+ .hxcard .hxnoimg{{width:100%;height:110px;display:flex;align-items:center;justify-content:center;color:#98a2b3;font-size:12px;background:#f6f8fb;border-radius:8px}}
+ .hxglm{{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0}}
+ .hxtag{{font-size:11px;border-radius:12px;padding:2px 8px;background:#eef4ff;color:#1d4ed8}}
+ .hxtag.warn{{background:#fdecec;color:#c0392b}}
+ .hxmodal{{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;z-index:60;align-items:center;justify-content:center}}
+ .hxmodal .panel{{background:#fff;border-radius:14px;max-width:860px;width:92%;max-height:86vh;overflow:auto;padding:16px}}
+ .hxmodal h3{{margin:2px 0 10px;font-size:15px}}
+ .hxmodal table{{width:100%;border-collapse:collapse;font-size:12px}}
+ .hxmodal th,.hxmodal td{{border-bottom:1px solid #eef0f4;padding:6px 8px;text-align:left;white-space:nowrap}}
+ .hxmodal .stfree{{color:#1a8f43;font-weight:600}}
+ .hxmodal .strent{{color:#c0392b}}
+ .hxmodal .closebar{{display:flex;justify-content:space-between;align-items:center;gap:10px}}
  .mapsearch{{display:flex;gap:10px;align-items:flex-start;padding:10px 0;flex-wrap:wrap}}
  .mapsb{{position:relative;flex:1;min-width:220px}}
  .mapsearch input{{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d5dbe3;border-radius:8px;font-size:14px}}
@@ -598,6 +625,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     <div id="cmpEmpty" class="cmp-empty">还没有加入对比的房源</div>
   </div>
 </div>
+<div id="hxModal" class="hxmodal"><div class="panel"><div class="closebar"><h3 id="hxTitle">户型 · 房源明细</h3><button type="button" class="ghost" onclick="hxClose()">关闭</button></div><div id="hxBody"></div></div></div>
 <script src="https://webapi.amap.com/maps?v=1.4.15&key=c226df9a44846d549b4f1689ece31e5"></script>
 <script>
 function filterSb(){{
@@ -997,6 +1025,86 @@ window.addEventListener('load', function(){{
   }});
   var m=(location.search.match(/[?&]q=([^&]*)/));
   if(m){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
+}});
+function hxPE(s){{ return String(s==null?'':s).replace(/[&<>"']/g,function(c){{return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c];}}); }}
+function hxBtnClick(e){{
+  var w=e.target.closest('.hxwrap'); if(!w) return;
+  var pid=w.getAttribute('data-pid');
+  var btn=w.querySelector('.hxbtn'); var st=w.querySelector('.hxstate');
+  if(w._hxData){{ hxShow(w,null); return; }}
+  btn.disabled=true; btn.textContent='加载户型/房源明细…';
+  fetch('/api/hx?projectId='+encodeURIComponent(pid)).then(function(r){{return r.json();}}).then(function(d){{
+    if(!d||!d.ok){{ btn.disabled=false; btn.textContent='该项目明细未采集'; st.textContent=(d&&d.msg)||''; return; }}
+    w._hxData=d; hxRender(w);
+  }}).catch(function(){{ btn.disabled=false; btn.textContent='加载失败，重试'; }});
+}}
+function hxRender(w){{
+  var d=w._hxData;
+  var btn=w.querySelector('.hxbtn'), st=w.querySelector('.hxstate'), box=w.querySelector('.hxbox');
+  btn.style.display='none';
+  st.innerHTML='已采集 '+d.houseCnt+' 套房源 · 含单套租金 '+d.detailCnt+' 套 · 更新 '+(d.updated||'—')+
+    '　<button type="button" class="ghost" onclick="hxShow(this.closest(\'.hxwrap\'),null)">打开全部明细 ▸</button>';
+  var h='<div class="hxglm">';
+  (d.types||[]).forEach(function(t,i){{
+    var s=t.stats||{{}}; var hasImg=t.imgs&&t.imgs.length;
+    h+='<div class="hxcard" data-i="'+i+'">';
+    h+='<div class="hxt">'+hxPE(t.name||('户型'+t.code))+'</div>';
+    h+='<div class="hxmeta">可租 <b>'+(t.online==null?'—':t.online)+'</b> / 共 '+(t.total==null?'—':t.total)+(t.off?(' · 离线 '+t.off):'')+'</div>';
+    h+='<div class="hxmeta">面积 '+(t.areaLow==null?'—':t.areaLow)+'~'+(t.areaHigh==null?'—':t.areaHigh)+'㎡　租金 '+(t.rentLow&&t.rentHigh?t.rentLow+'~'+t.rentHigh+'元':'—')+'</div>';
+    h+='<div class="hxmeta">明细：可租 '+s.free+' / 已租 '+s.rented+(s.lock?(' / 锁定 '+s.lock):'')+'</div>';
+    if(hasImg) h+='<img class="hximg" loading="lazy" src="'+t.imgs[0]+'">';
+    else h+='<div class="hxnoimg">（户型图暂未获取到）</div>';
+    h+='<div class="hxmeta" style="color:#2563eb">点击查看 '+(t.name||'')+' 房源列表 →</div>';
+    h+='</div>';
+  }});
+  h+='</div>';
+  box.innerHTML=h;
+}}
+function hxShow(w,t){{
+  var modal=document.getElementById('hxModal'); var body=document.getElementById('hxBody');
+  if(!modal) return;
+  hxShow._cur={{w:w,t:t}};
+  var d=w._hxData, pid=w.getAttribute('data-pid'), name=w.getAttribute('data-name');
+  document.getElementById('hxTitle').textContent=(t&&t.name?('「'+t.name+'」 房源明细'):'全部房源明细')+' · '+name;
+  body.innerHTML='<div class="muted" style="margin:10px 0">加载中…</div>';
+  modal.style.display='flex';
+  var url='/api/hxhouses?projectId='+encodeURIComponent(pid)+'&limit=200'+(hxShow._free?'&free=1':'');
+  if(t) url+='&dt='+encodeURIComponent(t.code||'');
+  fetch(url).then(function(r){{return r.json();}}).then(function(d){{
+    if(!d||!d.ok){{ body.innerHTML='<div class="muted">'+((d&&d.msg)||'加载失败')+'</div>'; return; }}
+    var rows=d.rows||[]; var nfree=0;
+    var h='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:4px 0 8px">'+
+      '<button type="button" class="ghost" onclick="hxOnlyFree()">'+(hxShow._free?'看全部':'仅看未出租')+'</button>'+
+      '<span class="muted">列表 '+(t?('户型「'+t.name+'」'):'全部')+' · 显示 '+rows.length+' 条</span></div>';
+    if(rows.length){{
+      h+='<table><thead><tr><th>门牌号</th><th>户型</th><th>面积</th><th>整租/合租</th><th>月租金</th><th>租赁状态</th><th>锁定</th></tr></thead><tbody>';
+      rows.forEach(function(r){{
+        if(r.rentStatus==='未出租') nfree++;
+        h+='<tr><td>'+hxPE(r.room||'—')+'</td><td>'+hxPE(r.dtName||r.dt)+'</td><td>'+hxPE(r.area)+'㎡</td>'+
+          '<td>'+hxPE(r.rentType||'—')+'</td>'+
+          '<td>'+(r.rent!==''&&r.rent!=null?hxPE(r.rent)+' 元':'明细未采集')+'</td>'+
+          '<td class="'+(r.rentStatus==='未出租'?'stfree':'strent')+'">'+hxPE(r.rentStatus||'—')+'</td>'+
+          '<td>'+(r.lock?'是':'否')+'</td></tr>';
+      }});
+      h+='</tbody></table>';
+      h='<div class="muted" style="margin:0 0 6px">其中未出租 <b>'+nfree+'</b> 套（绿色）· 租金为「明细未采集」的单套未抓取详情</div>'+h;
+    }} else {{
+      h='<div class="muted">（该户型暂无缓存房源）</div>';
+    }}
+    body.innerHTML=h;
+  }}).catch(function(){{ body.innerHTML='<div class="muted">加载失败</div>'; }});
+}}
+function hxOnlyFree(){{
+  hxShow._free=!hxShow._free;
+  var c=hxShow._cur; if(c) hxShow(c.w,c.t);
+}}
+function hxClose(){{ document.getElementById('hxModal').style.display='none'; }}
+document.addEventListener('click', function(e){{
+  var t=e.target; if(!t||!t.classList) return;
+  if(t.classList.contains('hxbtn')) hxBtnClick(e);
+  else if(t.classList.contains('hxcard')) hxShow(t.closest('.hxwrap'), (t.closest('.hxwrap')._hxData&&t.closest('.hxwrap')._hxData.types||[])[+t.getAttribute('data-i')]);
+  else if(t.id==='hxModal') hxClose();
+  else if(t.closest&&t.closest('#hxModal')&&t.textContent.trim()==='关闭') hxClose();
 }});
 </script>
 </body></html>"""
