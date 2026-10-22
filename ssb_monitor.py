@@ -548,13 +548,14 @@ def _notice_map(notice):
     return m
 
 
-def project_snapshot(cur_all, pd_items=None, notice=None):
+def project_snapshot(cur_all, pd_items=None, notice=None, push_cfg=None):
+    cfg = push_cfg or PUSH
     dists = {}
     for it in cur_all:
         d = it.get("districtName") or it.get("district") or "未知"
         dists[d] = dists.get(d, 0) + 1
-    ssb_words = [(r.get("word") or "").strip() for r in PUSH.get("keywords", []) if (r.get("word") or "").strip()]
-    pd_words = [(r.get("word") or "").strip() for r in PUSH.get("pd_keywords", []) if (r.get("word") or "").strip()]
+    ssb_words = [(r.get("word") or "").strip() for r in cfg.get("keywords", []) if (r.get("word") or "").strip()]
+    pd_words = [(r.get("word") or "").strip() for r in cfg.get("pd_keywords", []) if (r.get("word") or "").strip()]
     return {
         "total": len(cur_all),
         "districts": dists,
@@ -611,22 +612,23 @@ def _rule_lines(rule, now, old, cap=8):
     return out
 
 
-def build_push_digest(cur_all, pd_items, notice, baseline):
+def build_push_digest(cur_all, pd_items, notice, baseline, push_cfg=None):
     """生成与上次心跳基线的对比摘要；返回 (lines, 本快照)"""
-    cur = project_snapshot(cur_all, pd_items, notice)
+    cfg = push_cfg or PUSH
+    cur = project_snapshot(cur_all, pd_items, notice, cfg)
     baseline = baseline or {}
     lines = []
-    if PUSH.get("total_change"):
+    if cfg.get("total_change"):
         old = baseline.get("total")
         if old is None:
             lines.append(f"随申办总项目数：{cur['total']} 个")
         elif old != cur["total"]:
             lines.append(f"随申办总项目数：{old} → {cur['total']}（{cur['total'] - old:+d}）")
 
-    if PUSH.get("district_change"):
+    if cfg.get("district_change"):
         curp = cur["projects"]
         oldp_all = baseline.get("projects")
-        for d in PUSH.get("districts", []):
+        for d in cfg.get("districts", []):
             now_ids = {p for p, v in curp.items() if v["district"] == d}
             if oldp_all is None:
                 lines.append(f"{d}：{len(now_ids)} 个项目")
@@ -652,7 +654,7 @@ def build_push_digest(cur_all, pd_items, notice, baseline):
             if len(gone_ids) > 8:
                 lines.append(f"  …等共 {len(gone_ids)} 个下线")
 
-    for rule in PUSH.get("keywords", []):
+    for rule in cfg.get("keywords", []):
         if rule.get("ignore"):
             continue
         w = (rule.get("word") or "").strip()
@@ -663,7 +665,7 @@ def build_push_digest(cur_all, pd_items, notice, baseline):
             lines.append(f"【随申办·词条「{w}」】")
             lines += sub
 
-    if PUSH.get("notice"):
+    if cfg.get("notice"):
         curn = cur["notice"]
         oldn = baseline.get("notice")
         if oldn is not None:
@@ -689,7 +691,7 @@ def build_push_digest(cur_all, pd_items, notice, baseline):
                     lines.append(f"  …等共 {len(gone_ids)} 条移除")
 
     pd_lines = []
-    if PUSH.get("pd_updown"):
+    if cfg.get("pd_updown"):
         oldp = _drop_ignored((baseline.get("pd") or {}).get("projects") or {})
         nowp = cur["pd"]["projects"]
         new_ids = [p for p in nowp if p not in oldp]
@@ -712,7 +714,7 @@ def build_push_digest(cur_all, pd_items, notice, baseline):
             if len(gone_ids) > 8:
                 pd_lines.append(f"  …等共 {len(gone_ids)} 个下架")
 
-    for rule in PUSH.get("pd_keywords", []):
+    for rule in cfg.get("pd_keywords", []):
         if rule.get("ignore"):
             continue
         w = (rule.get("word") or "").strip()
@@ -877,8 +879,8 @@ def send_serverchan_key(key, text):
         return False
 
 
-def push_users(body):
-    """按每个用户选定的整点，用其自己的 Server酱 推送（每天≤5次）"""
+def push_users(cur_all, pd_items, notice):
+    """按每个用户选定的整点/内容，用自己的 Server酱 推送（每天≤5次）"""
     try:
         import users as _U
     except Exception:
@@ -890,20 +892,32 @@ def push_users(body):
     except Exception:
         return
     for email, u in list(users_map.items()):
-        push_cfg = u.get("push") or {}
-        key = (push_cfg.get("serverchan") or "").strip()
-        hours = push_cfg.get("hours") or []
+        pc = u.get("push") or {}
+        key = (pc.get("serverchan") or "").strip()
+        hours = pc.get("hours") or []
         if not key or bj.hour not in hours:
             continue
         if u.get("last_push_hour") == stamp:
             continue
+        cfg = pc.get("content") or {}
+        baseline = u.get("push_baseline")
+        try:
+            digest, snap = build_push_digest(cur_all, pd_items, notice, baseline, cfg)
+        except Exception as e:
+            print("用户摘要生成失败:", email, repr(e))
+            continue
+        body = (f"时间：{bj.strftime('%Y-%m-%d %H:%M')}\n"
+                f"随申办项目 {len(cur_all)} ｜ 明珠在线 {len(pd_items or [])} ｜ 供应预告 {len(notice or [])}")
+        if digest:
+            body += "\n\n━━ 变动 ━━\n" + "\n".join(digest)
+        else:
+            body += "\n（按你的设置本轮暂无可推送的变动）"
         ok, n = _U.push_take(email, 5)
         if not ok:
             print(f"用户推送已达上限: {email}")
             continue
-        text = "【房源监控 · 定时推送】\n" + body
-        if send_serverchan_key(key, text):
-            _U.update_user(email, last_push_hour=stamp)
+        if send_serverchan_key(key, "【房源监控 · 定时推送】\n" + body):
+            _U.update_user(email, last_push_hour=stamp, push_baseline=snap)
             print(f"用户推送已发送: {email} ({n}/5)")
 
 
@@ -1256,12 +1270,7 @@ def run_once(report=False):
     if state.get("__user_push_hour__") != stamp:
         state["__user_push_hour__"] = stamp
         if cur_all is not None:
-            ub, _ = build_push_digest(cur_all, pd, notice, state.get(HB_BASELINE_KEY))
-            ubody = (f"时间：{bj.strftime('%Y-%m-%d %H:%M')}\n"
-                     f"随申办项目 {len(cur_all)} ｜ 明珠在线 {len(pd) if pd else 0} ｜ 供应预告 {len(notice) if notice else 0}")
-            if ub:
-                ubody += "\n\n━━ 变动 ━━\n" + "\n".join(ub)
-            push_users(ubody)
+            push_users(cur_all, pd, notice)
 
     state[SCOPE_KEY] = scope
     save_state(state)

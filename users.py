@@ -145,13 +145,13 @@ def add_favorite(email, key, limit=5):
         return False, "用户不存在"
     favs = u.get("favorites") or []
     if key in favs:
-        return True, "已收藏"
+        return True, "已加入对比"
     if len(favs) >= limit:
-        return False, f"最多收藏 {limit} 个"
+        return False, f"最多对比 {limit} 个"
     favs.append(key)
     u["favorites"] = favs
     save_users(d)
-    return True, "已收藏"
+    return True, "已加入对比"
 
 
 def remove_favorite(email, key):

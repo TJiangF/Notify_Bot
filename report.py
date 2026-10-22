@@ -854,7 +854,7 @@ function addCompare(ev, btn){{
   afterCmpChange();
   if(LOGGED_IN){{
     fetch('/api/favorite',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'key='+encodeURIComponent(key)}}).then(function(r){{return r.json();}}).then(function(d){{
-      if(!d||!d.ok){{ alert((d&&d.msg)||'收藏失败'); compareList=compareList.filter(function(x){{return x.key!==key;}}); afterCmpChange(); }}
+      if(!d||!d.ok){{ alert((d&&d.msg)||'加入对比失败'); compareList=compareList.filter(function(x){{return x.key!==key;}}); afterCmpChange(); }}
     }}).catch(function(){{}});
   }}
 }}

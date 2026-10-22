@@ -977,26 +977,99 @@ def render_account(request, u):
         f'<label class="chk" style="margin:2px 12px 2px 0"><input type="checkbox" name="hours" value="{h}"'
         f'{" checked" if h in sel_hours else ""}> {h:02d}:00</label>'
         for h in range(24))
+    cur = report.load_current()
+    districts = sorted({x.get("district") for x in cur.get("ssb", []) if x.get("district")})
+    content = push.get("content") or {}
+    sel_dists = set(content.get("districts") or [])
+    dist_checks = "".join(
+        f'<label class="chk" style="margin:2px 12px 2px 0"><input type="checkbox" class="udist" value="{esc(d)}"'
+        f'{" checked" if d in sel_dists else ""}> {esc(d)}</label>'
+        for d in districts) or '<span class="muted">（暂无行政区数据）</span>'
+
+    def ck(flag, default=False):
+        val = default if flag is None else bool(flag)
+        return "checked" if val else ""
+
+    kw_init = json.dumps(content.get("keywords") or [], ensure_ascii=False)
+    pd_init = json.dumps(content.get("pd_keywords") or [], ensure_ascii=False)
     fav_items = _fav_items(u.get("favorites") or [])
     fav_html = "".join(
         f'<div style="padding:6px 0;border-bottom:1px solid #eef0f3;font-size:13px"><b>{esc(it["name"])}</b> '
         f'<span class="muted">{esc(it["src"])}｜{esc(it["addr"])}</span></div>'
-        for it in fav_items) or '<div class="muted">暂无收藏（在报表房源处点“加入比较”即收藏，最多 5 个）</div>'
+        for it in fav_items) or '<div class="muted">暂无对比记录（在报表房源处点“加入比较”即可，最多 5 条）</div>'
     sc_hint = (f"已设置（…{esc(sc[-4:])}）" if sc else "未设置")
     body = f'''<p class="muted" style="margin:0 0 14px">账号：{esc(u.get("email"))}　昵称：{esc(u.get("name"))}　
 <a href="/logout">退出登录</a>　｜　<a href="/">返回报表</a></p>
 <form method="post" action="/account">
   <label class="f">Server酱 SendKey（可粘贴完整链接，当前：{sc_hint}）</label>
   <input name="serverchan" placeholder="https://sctapi.ftqq.com/SCTxxxxx.send 或直接填 SendKey">
-  <div class="muted" style="margin-top:6px">还没有 SendKey？前往官方获取：<a href="https://sct.ftqq.com/" target="_blank" rel="noopener">https://sct.ftqq.com/</a>（登录后复制 SendKey 或推送链接）</div>
+  <div class="muted" style="margin-top:6px">还没有 SendKey？前往官方获取：<a href="https://sct.ftqq.com/" target="_blank" rel="noopener">https://sct.ftqq.com/</a></div>
   <label class="f" style="margin-top:14px">心跳推送小时（最多选 3 个；推荐白天 8:00–22:00）</label>
   <div style="max-height:130px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
-  <div class="muted" style="margin-top:8px">"心跳推送"=按上面所选整点自动推送；"立即推送一次"=马上手动发一条测试。一天最多 3 次心跳，加上特殊情况（Cookie 失效 / 限流 / 恢复）合计最多 5 次/天。</div>
+  <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上发一条测试。一天最多 3 次心跳，含特殊情况合计最多 5 次/天。</div>
+
+  <h3 style="margin:20px 0 6px">推送内容（自定义）</h3>
+  <div class="pushbox"><label class="chk"><input type="checkbox" id="u_total" {ck(content.get("total_change"), True)}> 随申办总项目数量增减</label></div>
+  <div class="pushbox"><label class="chk"><input type="checkbox" id="u_notice" {ck(content.get("notice"), True)}> 随申办供应预告（新增/移除）</label></div>
+  <div class="pushbox">
+    <label class="chk"><input type="checkbox" id="u_dist" {ck(content.get("district_change"))}> 随申办特定行政区项目增减</label>
+    <div class="distlist">{dist_checks}</div>
+  </div>
+  <div class="pushbox">
+    <div style="font-weight:600;margin-bottom:6px">随申办特定词条（最多 10）</div>
+    <table class="kwtbl"><thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th></th></tr></thead><tbody id="ukwrows"></tbody></table>
+    <button type="button" id="ukwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+  </div>
+  <div class="pushbox">
+    <label class="chk"><input type="checkbox" id="u_pdup" {ck(content.get("pd_updown"))}> 明珠在线项目上下线</label>
+    <div style="font-weight:600;margin:14px 0 6px">明珠在线特定词条（最多 10）</div>
+    <table class="kwtbl"><thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th></th></tr></thead><tbody id="updrows"></tbody></table>
+    <button type="button" id="updadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+  </div>
+  <input type="hidden" name="push_json" id="u_push_json">
+
   <p><button style="margin-top:14px">保存</button> <button type="button" id="utest" class="ghost">立即推送一次（测试）</button> <span id="utest_msg" class="muted"></span></p>
 </form>
-<label class="f" style="margin-top:16px">我的收藏（{len(fav_items)}/5）</label>
+<label class="f" style="margin-top:16px">我的对比（{len(fav_items)}/5）</label>
 <div>{fav_html}</div>
 <script>
+var UKW = {kw_init};
+var UPDKW = {pd_init};
+function uEsc(s){{return String(s==null?'':s).replace(/[&<>"']/g,function(c){{return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c];}});}}
+function uRender(list, tbodyId, addId){{
+  var tb=document.getElementById(tbodyId); if(!tb) return; tb.innerHTML='';
+  list.forEach(function(r,i){{
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td style="text-align:left"><input type="text" class="ukw" data-i="'+i+'" value="'+uEsc(r.word)+'" placeholder="如：森兰"></td>'
+      +'<td><input type="checkbox" class="unew" data-i="'+i+'" '+(r['new']?'checked':'')+'></td>'
+      +'<td><input type="checkbox" class="uup" data-i="'+i+'" '+(r.updown?'checked':'')+'></td>'
+      +'<td><input type="checkbox" class="ucnt" data-i="'+i+'" '+(r.count?'checked':'')+'></td>'
+      +'<td><input type="checkbox" class="uign" data-i="'+i+'" '+(r.ignore?'checked':'')+'></td>'
+      +'<td><button type="button" class="ghost udel" data-i="'+i+'">删除</button></td>';
+    tb.appendChild(tr);
+  }});
+  var add=document.getElementById(addId); if(add) add.disabled = list.length>=10;
+}}
+function uBind(tbodyId, list, addId){{
+  var tb=document.getElementById(tbodyId); if(!tb) return;
+  tb.addEventListener('input', function(e){{
+    var t=e.target; if(!t.classList.contains('ukw')) return; var i=+t.getAttribute('data-i'); if(!isNaN(i)) list[i].word=t.value;
+  }});
+  tb.addEventListener('change', function(e){{
+    var t=e.target, i=+t.getAttribute('data-i'); if(isNaN(i)) return;
+    if(t.classList.contains('unew')) list[i]['new']=t.checked;
+    else if(t.classList.contains('uup')) list[i].updown=t.checked;
+    else if(t.classList.contains('ucnt')) list[i].count=t.checked;
+    else if(t.classList.contains('uign')) list[i].ignore=t.checked;
+  }});
+  tb.addEventListener('click', function(e){{
+    if(e.target.classList.contains('udel')){{ list.splice(+e.target.getAttribute('data-i'),1); uRender(list, tbodyId, addId); }}
+  }});
+  var add=document.getElementById(addId);
+  if(add) add.addEventListener('click', function(){{ if(list.length<10){{ list.push({{word:'',new:true,updown:true,count:true,ignore:false}}); uRender(list, tbodyId, addId); }} }});
+}}
+uRender(UKW,'ukwrows','ukwadd'); uRender(UPDKW,'updrows','updadd');
+uBind('ukwrows',UKW,'ukwadd'); uBind('updrows',UPDKW,'updadd');
 (function(){{
   var b=document.getElementById('utest');
   if(b) b.addEventListener('click', function(){{
@@ -1004,6 +1077,19 @@ def render_account(request, u):
     fetch('/api/user_test_push',{{method:'POST'}}).then(function(r){{return r.json();}}).then(function(d){{
       if(o) o.textContent=(d&&d.msg)||'完成'; b.disabled=false;
     }}).catch(function(){{ if(o) o.textContent='发送失败'; b.disabled=false; }});
+  }});
+  var form=document.querySelector('form[action="/account"]');
+  if(form) form.addEventListener('submit', function(){{
+    var dists=[]; document.querySelectorAll('.udist:checked').forEach(function(c){{dists.push(c.value);}});
+    function rules(arr){{ return arr.filter(function(r){{return (r.word||'').trim();}}).map(function(r){{return {{word:r.word.trim(),'new':!!r['new'],updown:!!r.updown,count:!!r.count,ignore:!!r.ignore}};}}); }}
+    var pj={{ total_change: !!(document.getElementById('u_total')||{{}}).checked,
+              notice: !!(document.getElementById('u_notice')||{{}}).checked,
+              district_change: !!(document.getElementById('u_dist')||{{}}).checked,
+              districts: dists,
+              pd_updown: !!(document.getElementById('u_pdup')||{{}}).checked,
+              keywords: rules(UKW),
+              pd_keywords: rules(UPDKW) }};
+    document.getElementById('u_push_json').value=JSON.stringify(pj);
   }});
 }})();
 </script>'''
@@ -1071,7 +1157,8 @@ def account_page(request: Request):
 
 
 @app.post("/account")
-def account_save(request: Request, serverchan: str = Form(""), hours: list[int] = Form(default=[])):
+def account_save(request: Request, serverchan: str = Form(""), hours: list[int] = Form(default=[]),
+                 push_json: str = Form("")):
     u = _logged_user(request)
     if not u:
         return RedirectResponse("/login", status_code=303)
@@ -1079,9 +1166,39 @@ def account_save(request: Request, serverchan: str = Form(""), hours: list[int] 
         hs = sorted({int(h) for h in (hours or []) if 0 <= int(h) <= 23})[:3]
     except Exception:
         hs = []
-    old_key = (u.get("push") or {}).get("serverchan", "")
-    key = _extract_sc(serverchan) or old_key
-    U.update_user(u["email"], push={"serverchan": key, "hours": hs})
+    old = u.get("push") or {}
+    key = _extract_sc(serverchan) or old.get("serverchan", "")
+    push = dict(old)
+    push["serverchan"] = key
+    push["hours"] = hs
+    if push_json.strip():
+        try:
+            pj = json.loads(push_json)
+        except Exception:
+            pj = {}
+        if isinstance(pj, dict):
+            def rules(raw):
+                out, seen = [], set()
+                for r in (raw or [])[:10]:
+                    if not isinstance(r, dict):
+                        continue
+                    w = str(r.get("word", "")).strip()
+                    if not w or w in seen:
+                        continue
+                    seen.add(w)
+                    out.append({"word": w, "new": bool(r.get("new")), "updown": bool(r.get("updown")),
+                                "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))})
+                return out
+            push["content"] = {
+                "total_change": bool(pj.get("total_change")),
+                "notice": bool(pj.get("notice", True)),
+                "district_change": bool(pj.get("district_change")),
+                "districts": [str(d) for d in (pj.get("districts") or []) if str(d).strip()],
+                "pd_updown": bool(pj.get("pd_updown")),
+                "keywords": rules(pj.get("keywords")),
+                "pd_keywords": rules(pj.get("pd_keywords")),
+            }
+    U.update_user(u["email"], push=push, push_baseline=None)
     return RedirectResponse("/account", status_code=303)
 
 
