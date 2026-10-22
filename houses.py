@@ -102,25 +102,25 @@ def _cls(rows):
     return (rows or []) if isinstance(rows, list) else []
 
 
-def collect(pid, page_size=500, max_pages=4, detail_n=0, cookie=None):
+def collect(pid, page_size=500, max_pages=4, detail_n=0, cookie=None, pace=3.0):
     cookie = cookie or _cookie()
     if not cookie:
         raise RuntimeError("缺少随申办 Cookie(SSB_COOKIE)")
     hx = hx_info(cookie, pid)
-    time.sleep(0.4)
+    time.sleep(pace)
     rows, total, page = [], None, 1
     for page in range(1, max_pages + 1):
         d = None
-        for attempt in range(3):
+        for attempt in range(6):
             d = house_list(cookie, pid, page, page_size)
             if d.get("results"):
                 break
-            time.sleep(1.2 * (attempt + 1))
+            time.sleep(min(20, 4.0 * (attempt + 1)))
         rows += _cls(d["results"])
         total = d["totalCount"]
         if not rows or len(rows) >= (total or 0):
             break
-        time.sleep(0.4)
+        time.sleep(pace)
     types = []
     for dt in (hx.get("doorTypes") or []):
         t = dict(dt.get("doorType") or {})
@@ -143,20 +143,29 @@ def collect(pid, page_size=500, max_pages=4, detail_n=0, cookie=None):
     return {"types": types, "houses": rows, "total": total}
 
 
-def collect_details(pid, house_ids, cookie=None):
+def collect_details(pid, house_ids, cookie=None, pace=2.5):
     """给指定 houseId 抓单套详情并并入缓存; 返回 {houseId: houseInfo}"""
     cookie = cookie or _cookie()
     cur = load_cache()
     rec = cur.get(pid) or {}
     details = rec.get("details") or {}
     out = {}
-    for hid in house_ids:
+    for i, hid in enumerate(house_ids):
         hid = str(hid)
-        try:
-            hd = house_detail(cookie, hid, pid)
-        except Exception:
-            continue
-        out[hid] = hd.get("houseInfo") or {}
+        got = None
+        for attempt in range(4):
+            try:
+                hd = house_detail(cookie, hid, pid)
+            except Exception:
+                hd = {}
+            if hd.get("houseInfo"):
+                got = hd
+                break
+            time.sleep(min(15, 3.0 * (attempt + 1)))
+        if got:
+            out[hid] = got.get("houseInfo") or {}
+        if i < len(house_ids) - 1:
+            time.sleep(pace)
     details.update(out)
     rec["details"] = details
     cur[pid] = rec
