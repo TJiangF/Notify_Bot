@@ -1021,6 +1021,8 @@ def user_register(request: Request, email: str = Form(""), name: str = Form(""),
     email = email.strip().lower()
     if not U.valid_email(email):
         return HTMLResponse(render_user_register("邮箱格式不正确", email, name))
+    if not U.email_domain_ok(email):
+        return HTMLResponse(render_user_register("该邮箱域名无法接收邮件，请更换邮箱", email, name))
     if len(pw) < 6:
         return HTMLResponse(render_user_register("密码至少 6 位", email, name))
     if pw != pw2:

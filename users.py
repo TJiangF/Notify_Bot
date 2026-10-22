@@ -3,6 +3,7 @@ import json
 import hmac
 import hashlib
 import re
+import subprocess
 from datetime import datetime, timedelta, timezone
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -37,6 +38,33 @@ def _save(path, d):
 
 def valid_email(e):
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$", (e or "").strip()))
+
+
+_MX_CACHE = {}
+
+
+def email_domain_ok(email):
+    """尽力校验邮箱域名能收信（MX 或 A 记录）。工具不可用则放行。"""
+    try:
+        domain = (email or "").split("@")[-1].strip().lower()
+    except Exception:
+        return False
+    if not domain or "." not in domain:
+        return False
+    if domain in _MX_CACHE:
+        return _MX_CACHE[domain]
+    ok = True
+    try:
+        mx = subprocess.run(["dig", "+short", "MX", domain], capture_output=True, text=True, timeout=6).stdout.strip()
+        if mx:
+            ok = True
+        else:
+            a = subprocess.run(["dig", "+short", "A", domain], capture_output=True, text=True, timeout=6).stdout.strip()
+            ok = bool(a)
+    except Exception:
+        ok = True
+    _MX_CACHE[domain] = ok
+    return ok
 
 
 def hash_pw(pw, salt=None):

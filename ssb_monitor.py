@@ -860,6 +860,53 @@ def _limit_bytes(s, n=1900):
     return b[:n].decode("utf-8", "ignore") + "\n…（内容过多已省略）"
 
 
+def send_serverchan_key(key, text):
+    key = (key or "").strip()
+    if not key:
+        return False
+    text = _limit_bytes(text)
+    title = (text.splitlines()[0] if text else "房源提醒")[:32].strip() or "房源提醒"
+    if key.startswith("sctp"):
+        m = re.match(r"sctp(\d+)t", key)
+        url = f"https://{m.group(1)}.push.ft07.com/send/{key}.send" if m else f"https://sctapi.ftqq.com/{key}.send"
+    else:
+        url = f"https://sctapi.ftqq.com/{key}.send"
+    try:
+        return requests.post(url, data={"title": title, "desp": text}, timeout=15).ok
+    except Exception:
+        return False
+
+
+def push_users(body):
+    """按每个用户选定的整点，用其自己的 Server酱 推送（每天≤5次）"""
+    try:
+        import users as _U
+    except Exception:
+        return
+    bj = now_bj()
+    stamp = bj.strftime("%Y-%m-%d %H")
+    try:
+        users_map = _U.load_users()
+    except Exception:
+        return
+    for email, u in list(users_map.items()):
+        push_cfg = u.get("push") or {}
+        key = (push_cfg.get("serverchan") or "").strip()
+        hours = push_cfg.get("hours") or []
+        if not key or bj.hour not in hours:
+            continue
+        if u.get("last_push_hour") == stamp:
+            continue
+        ok, n = _U.push_take(email, 5)
+        if not ok:
+            print(f"用户推送已达上限: {email}")
+            continue
+        text = "【房源监控 · 定时推送】\n" + body
+        if send_serverchan_key(key, text):
+            _U.update_user(email, last_push_hour=stamp)
+            print(f"用户推送已发送: {email} ({n}/5)")
+
+
 def push(text, heartbeat=False):
     text = _limit_bytes(text)
     if SUPPRESS_PUSH:
@@ -1205,6 +1252,16 @@ def run_once(report=False):
         state[HB_BASELINE_KEY] = cur_snap
         state[HEARTBEAT_KEY] = stamp
         print("整点心跳已推送:", stamp)
+
+    if state.get("__user_push_hour__") != stamp:
+        state["__user_push_hour__"] = stamp
+        if cur_all is not None:
+            ub, _ = build_push_digest(cur_all, pd, notice, state.get(HB_BASELINE_KEY))
+            ubody = (f"时间：{bj.strftime('%Y-%m-%d %H:%M')}\n"
+                     f"随申办项目 {len(cur_all)} ｜ 明珠在线 {len(pd) if pd else 0} ｜ 供应预告 {len(notice) if notice else 0}")
+            if ub:
+                ubody += "\n\n━━ 变动 ━━\n" + "\n".join(ub)
+            push_users(ubody)
 
     state[SCOPE_KEY] = scope
     save_state(state)
