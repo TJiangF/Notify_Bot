@@ -558,7 +558,6 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <button class="sb-toggle" onclick="toggleNav()">«</button>
 <div class="sb-title">章节</div>
 {user_area}
-{user_area}
 <a class="sb-link" href="#sec-top">概览</a>
 <a class="sb-link" href="#sec-map">智能找房</a>
 <a class="sb-link" href="#sec-notice">供应预告</a>
