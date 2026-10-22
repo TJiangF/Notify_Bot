@@ -596,7 +596,9 @@ def _rule_lines(rule, now, old, cap=8):
         out.append("  ❌ 下架：")
         for p in gone_ids[:cap]:
             v = old[p]
-            out.append(f"   · {v['name']}" + _fmt_detail(f"地址：{v['addr']}" if v.get("addr") else ""))
+            out.append(f"   · {v['name']}" + _fmt_detail(
+                f"地址：{v['addr']}" if v.get("addr") else "",
+                f"电话：{v['tel']}" if v.get("tel") else ""))
         if len(gone_ids) > cap:
             out.append(f"   …等共 {len(gone_ids)} 个")
     if rule.get("count") and cnt_ids:
@@ -644,7 +646,9 @@ def build_push_digest(cur_all, pd_items, notice, baseline):
                 lines.append(f"  …等共 {len(new_ids)} 个上线")
             for p in gone_ids[:8]:
                 v = oldp_all[p]
-                lines.append(f"  ❌ 下线：{v['name']}" + _fmt_detail(f"地址：{v['addr']}" if v.get("addr") else ""))
+                lines.append(f"  ❌ 下线：{v['name']}" + _fmt_detail(
+                    f"地址：{v['addr']}" if v.get("addr") else "",
+                    f"电话：{v['tel']}" if v.get("tel") else ""))
             if len(gone_ids) > 8:
                 lines.append(f"  …等共 {len(gone_ids)} 个下线")
 
@@ -677,32 +681,36 @@ def build_push_digest(cur_all, pd_items, notice, baseline):
                 if len(new_ids) > 8:
                     lines.append(f"  …等共 {len(new_ids)} 条")
                 for nid in gone_ids[:8]:
-                    lines.append(f"  ➖ 移除：{oldn[nid]['name']}")
+                    v = oldn[nid]
+                    lines.append(f"  ➖ 移除：{v['name']}" + _fmt_detail(
+                        f"地址：{v['addr']}" if v.get("addr") else "",
+                        f"电话：{v['tel']}" if v.get("tel") else ""))
                 if len(gone_ids) > 8:
                     lines.append(f"  …等共 {len(gone_ids)} 条移除")
 
+    pd_lines = []
     if PUSH.get("pd_updown"):
         oldp = _drop_ignored((baseline.get("pd") or {}).get("projects") or {})
         nowp = cur["pd"]["projects"]
         new_ids = [p for p in nowp if p not in oldp]
         gone_ids = [p for p in oldp if p not in nowp]
         if new_ids or gone_ids:
-            lines.append("【明珠在线·上下线】")
+            pd_lines.append("【明珠在线·上下线】")
             for p in new_ids[:8]:
                 v = nowp[p]
-                lines.append(f"  🆕 上架：{v['name']}（可租 {v['kzts']} 套）" + _fmt_detail(
+                pd_lines.append(f"  🆕 上架：{v['name']}（可租 {v['kzts']} 套）" + _fmt_detail(
                     f"地址：{v['addr']}" if v.get("addr") else "",
                     f"电话：{v['tel']}" if v.get("tel") else "",
                     f"状态：{v['status']}" if v.get("status") else ""))
             if len(new_ids) > 8:
-                lines.append(f"  …等共 {len(new_ids)} 个上架")
+                pd_lines.append(f"  …等共 {len(new_ids)} 个上架")
             for p in gone_ids[:8]:
                 v = oldp[p]
-                lines.append(f"  ❌ 下架：{v['name']}" + _fmt_detail(
+                pd_lines.append(f"  ❌ 下架：{v['name']}" + _fmt_detail(
                     f"地址：{v['addr']}" if v.get("addr") else "",
                     f"电话：{v['tel']}" if v.get("tel") else ""))
             if len(gone_ids) > 8:
-                lines.append(f"  …等共 {len(gone_ids)} 个下架")
+                pd_lines.append(f"  …等共 {len(gone_ids)} 个下架")
 
     for rule in PUSH.get("pd_keywords", []):
         if rule.get("ignore"):
@@ -712,8 +720,11 @@ def build_push_digest(cur_all, pd_items, notice, baseline):
             continue
         sub = _rule_lines(rule, cur["pd"]["keywords"].get(w, {}), _drop_ignored(((baseline.get("pd") or {}).get("keywords") or {}).get(w, {})))
         if sub:
-            lines.append(f"【明珠·词条「{w}」】")
-            lines += sub
+            pd_lines.append(f"【明珠·词条「{w}」】")
+            pd_lines += sub
+    if pd_lines:
+        lines.append("")
+        lines += pd_lines
     return lines, cur
 
 
