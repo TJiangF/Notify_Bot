@@ -107,13 +107,20 @@ def collect(pid, page_size=500, max_pages=4, detail_n=0, cookie=None):
     if not cookie:
         raise RuntimeError("缺少随申办 Cookie(SSB_COOKIE)")
     hx = hx_info(cookie, pid)
+    time.sleep(0.4)
     rows, total, page = [], None, 1
     for page in range(1, max_pages + 1):
-        d = house_list(cookie, pid, page, page_size)
+        d = None
+        for attempt in range(3):
+            d = house_list(cookie, pid, page, page_size)
+            if d.get("results"):
+                break
+            time.sleep(1.2 * (attempt + 1))
         rows += _cls(d["results"])
         total = d["totalCount"]
         if not rows or len(rows) >= (total or 0):
             break
+        time.sleep(0.4)
     types = []
     for dt in (hx.get("doorTypes") or []):
         t = dict(dt.get("doorType") or {})

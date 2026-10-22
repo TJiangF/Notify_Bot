@@ -31,6 +31,7 @@ samp = H.pick_sample(pid, n_total=10, free=5)
 print("== 选出 10 套样例房，抓单套详情 ==")
 ids = [str(h.get("houseId")) for h in samp]
 det = H.collect_details(pid, ids)
+time.sleep(0.5)
 ph = H.collect_photos(pid)
 print("户型图下载成功:", ph.get("ok"), "失败:", ph.get("fail"))
 
