@@ -23,6 +23,7 @@ DEFAULTS = {
         "total_change": True,
         "district_change": False,
         "districts": [],
+        "notice": True,
         "keywords": [],
         "pd_updown": False,
         "pd_keywords": [],

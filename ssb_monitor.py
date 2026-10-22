@@ -480,7 +480,9 @@ def _kw_map(cur_all, word):
             online = it.get("onlineFlatNum")
             if online is None:
                 online = it.get("online") or 0
-            m[pid] = {"online": online, "name": name}
+            m[pid] = {"online": online, "name": name,
+                      "addr": it.get("projectLocation") or it.get("addr") or "",
+                      "tel": it.get("projectTel") or it.get("tel") or ""}
     return m
 
 
@@ -495,7 +497,9 @@ def _pd_kw_map(pd_items, word):
             kz = it.get("kzts")
             if kz is None:
                 kz = 0
-            m[pid] = {"online": kz, "name": name}
+            m[pid] = {"online": kz, "name": name,
+                      "addr": it.get("LOCATION") or it.get("addr") or "",
+                      "tel": it.get("lxdh") or it.get("tel") or ""}
     return m
 
 
@@ -505,13 +509,46 @@ def _pd_projects(pd_items):
         pid = str(it.get("projectId") or it.get("id"))
         if ("pd:" + pid) in IGNORE:
             continue
-        name = it.get("villageProjectName") or it.get("name") or ""
         kz = it.get("kzts")
-        m[pid] = {"name": name, "kzts": (0 if kz is None else kz)}
+        m[pid] = {"name": it.get("villageProjectName") or it.get("name") or "",
+                  "kzts": (0 if kz is None else kz),
+                  "addr": it.get("LOCATION") or it.get("addr") or "",
+                  "tel": it.get("lxdh") or it.get("tel") or "",
+                  "status": it.get("projectStatusName") or it.get("status") or ""}
     return m
 
 
-def project_snapshot(cur_all, pd_items=None):
+def _ssb_projects(cur_all):
+    m = {}
+    for it in cur_all:
+        pid = str(it.get("projectId") or it.get("id"))
+        if pid in IGNORE:
+            continue
+        online = it.get("onlineFlatNum")
+        if online is None:
+            online = it.get("online") or 0
+        m[pid] = {"name": it.get("projectName") or it.get("name") or "",
+                  "district": it.get("districtName") or it.get("district") or "未知",
+                  "online": online,
+                  "addr": it.get("projectLocation") or it.get("addr") or "",
+                  "tel": it.get("projectTel") or it.get("tel") or ""}
+    return m
+
+
+def _notice_map(notice):
+    m = {}
+    for n in notice or []:
+        nid = str(n.get("noticeId") or n.get("id"))
+        m[nid] = {"name": n.get("projectName") or n.get("name") or "",
+                  "addr": n.get("projectAddress") or n.get("addr") or "",
+                  "supply_date": n.get("planSupplyDate") or n.get("supply_date") or "",
+                  "rent": n.get("planRentLevel") or n.get("rent") or "",
+                  "tel": n.get("contact") or n.get("tel") or "",
+                  "org": n.get("orgName") or n.get("org") or ""}
+    return m
+
+
+def project_snapshot(cur_all, pd_items=None, notice=None):
     dists = {}
     for it in cur_all:
         d = it.get("districtName") or it.get("district") or "未知"
@@ -521,7 +558,9 @@ def project_snapshot(cur_all, pd_items=None):
     return {
         "total": len(cur_all),
         "districts": dists,
+        "projects": _ssb_projects(cur_all),
         "keywords": {w: _kw_map(cur_all, w) for w in ssb_words},
+        "notice": _notice_map(notice),
         "pd": {
             "total": len(pd_items or []),
             "projects": _pd_projects(pd_items),
@@ -534,23 +573,45 @@ def _drop_ignored(m):
     return {p: v for p, v in (m or {}).items() if p not in IGNORE and ("pd:" + p) not in IGNORE}
 
 
-def _rule_lines(rule, now, old):
+def _fmt_detail(*parts):
+    parts = [p for p in parts if p]
+    return ("　" + " ｜ ".join(parts)) if parts else ""
+
+
+def _rule_lines(rule, now, old, cap=8):
+    out = []
     new_ids = [p for p in now if p not in old]
     gone_ids = [p for p in old if p not in now]
     cnt_ids = [p for p in now if p in old and now[p]["online"] != old[p]["online"]]
-    sub = []
     if rule.get("new") and new_ids:
-        sub.append("🆕 新增：" + "、".join(f"{now[p]['name']}（{now[p]['online']} 套）" for p in new_ids))
+        out.append("  🆕 新增：")
+        for p in new_ids[:cap]:
+            v = now[p]
+            out.append(f"   · {v['name']}（{v['online']} 套）" + _fmt_detail(
+                f"地址：{v['addr']}" if v.get("addr") else "",
+                f"电话：{v['tel']}" if v.get("tel") else ""))
+        if len(new_ids) > cap:
+            out.append(f"   …等共 {len(new_ids)} 个")
     if rule.get("updown") and gone_ids:
-        sub.append("❌ 下架：" + "、".join(old[p]["name"] for p in gone_ids))
+        out.append("  ❌ 下架：")
+        for p in gone_ids[:cap]:
+            v = old[p]
+            out.append(f"   · {v['name']}" + _fmt_detail(f"地址：{v['addr']}" if v.get("addr") else ""))
+        if len(gone_ids) > cap:
+            out.append(f"   …等共 {len(gone_ids)} 个")
     if rule.get("count") and cnt_ids:
-        sub.append("🔢 数量变动：" + "、".join(f"{now[p]['name']} {old[p]['online']}→{now[p]['online']}" for p in cnt_ids))
-    return sub
+        out.append("  🔢 数量变动：")
+        for p in cnt_ids[:cap]:
+            v = now[p]
+            out.append(f"   · {v['name']} {old[p]['online']}→{v['online']}")
+        if len(cnt_ids) > cap:
+            out.append(f"   …等共 {len(cnt_ids)} 个")
+    return out
 
 
-def build_push_digest(cur_all, pd_items, baseline):
+def build_push_digest(cur_all, pd_items, notice, baseline):
     """生成与上次心跳基线的对比摘要；返回 (lines, 本快照)"""
-    cur = project_snapshot(cur_all, pd_items)
+    cur = project_snapshot(cur_all, pd_items, notice)
     baseline = baseline or {}
     lines = []
     if PUSH.get("total_change"):
@@ -559,14 +620,34 @@ def build_push_digest(cur_all, pd_items, baseline):
             lines.append(f"随申办总项目数：{cur['total']} 个")
         elif old != cur["total"]:
             lines.append(f"随申办总项目数：{old} → {cur['total']}（{cur['total'] - old:+d}）")
+
     if PUSH.get("district_change"):
+        curp = cur["projects"]
+        oldp_all = baseline.get("projects")
         for d in PUSH.get("districts", []):
-            now = cur["districts"].get(d, 0)
-            old = (baseline.get("districts") or {}).get(d)
-            if old is None:
-                lines.append(f"{d}：{now} 个项目")
-            elif old != now:
-                lines.append(f"{d}：{old} → {now}（{now - old:+d}）")
+            now_ids = {p for p, v in curp.items() if v["district"] == d}
+            if oldp_all is None:
+                lines.append(f"{d}：{len(now_ids)} 个项目")
+                continue
+            old_ids = {p for p, v in oldp_all.items() if v.get("district") == d}
+            new_ids = sorted(now_ids - old_ids)
+            gone_ids = sorted(old_ids - now_ids)
+            if not new_ids and not gone_ids:
+                continue
+            lines.append(f"【行政区·{d}】{len(old_ids)} → {len(now_ids)}（{len(now_ids) - len(old_ids):+d}）")
+            for p in new_ids[:8]:
+                v = curp[p]
+                lines.append(f"  🆕 上线：{v['name']}（在线 {v['online']} 套）" + _fmt_detail(
+                    f"地址：{v['addr']}" if v.get("addr") else "",
+                    f"电话：{v['tel']}" if v.get("tel") else ""))
+            if len(new_ids) > 8:
+                lines.append(f"  …等共 {len(new_ids)} 个上线")
+            for p in gone_ids[:8]:
+                v = oldp_all[p]
+                lines.append(f"  ❌ 下线：{v['name']}" + _fmt_detail(f"地址：{v['addr']}" if v.get("addr") else ""))
+            if len(gone_ids) > 8:
+                lines.append(f"  …等共 {len(gone_ids)} 个下线")
+
     for rule in PUSH.get("keywords", []):
         if rule.get("ignore"):
             continue
@@ -575,17 +656,54 @@ def build_push_digest(cur_all, pd_items, baseline):
             continue
         sub = _rule_lines(rule, cur["keywords"].get(w, {}), _drop_ignored((baseline.get("keywords") or {}).get(w, {})))
         if sub:
-            lines.append(f"随申办·词条「{w}」：\n  " + "\n  ".join(sub))
+            lines.append(f"【随申办·词条「{w}」】")
+            lines += sub
+
+    if PUSH.get("notice"):
+        curn = cur["notice"]
+        oldn = baseline.get("notice")
+        if oldn is not None:
+            new_ids = [n for n in curn if n not in oldn]
+            gone_ids = [n for n in oldn if n not in curn]
+            if new_ids or gone_ids:
+                lines.append("【随申办·供应预告】")
+                for nid in new_ids[:8]:
+                    v = curn[nid]
+                    lines.append(f"  📢 新增：{v['name']}" + _fmt_detail(
+                        f"地址：{v['addr']}" if v.get("addr") else "",
+                        f"计划供应日：{v['supply_date']}" if v.get("supply_date") else "",
+                        f"租金：{v['rent']}" if v.get("rent") else "",
+                        f"电话：{v['tel']}" if v.get("tel") else ""))
+                if len(new_ids) > 8:
+                    lines.append(f"  …等共 {len(new_ids)} 条")
+                for nid in gone_ids[:8]:
+                    lines.append(f"  ➖ 移除：{oldn[nid]['name']}")
+                if len(gone_ids) > 8:
+                    lines.append(f"  …等共 {len(gone_ids)} 条移除")
 
     if PUSH.get("pd_updown"):
         oldp = _drop_ignored((baseline.get("pd") or {}).get("projects") or {})
         nowp = cur["pd"]["projects"]
         new_ids = [p for p in nowp if p not in oldp]
         gone_ids = [p for p in oldp if p not in nowp]
-        if new_ids:
-            lines.append("明珠在线·上架：" + "、".join(nowp[p]["name"] for p in new_ids))
-        if gone_ids:
-            lines.append("明珠在线·下架：" + "、".join(oldp[p]["name"] for p in gone_ids))
+        if new_ids or gone_ids:
+            lines.append("【明珠在线·上下线】")
+            for p in new_ids[:8]:
+                v = nowp[p]
+                lines.append(f"  🆕 上架：{v['name']}（可租 {v['kzts']} 套）" + _fmt_detail(
+                    f"地址：{v['addr']}" if v.get("addr") else "",
+                    f"电话：{v['tel']}" if v.get("tel") else "",
+                    f"状态：{v['status']}" if v.get("status") else ""))
+            if len(new_ids) > 8:
+                lines.append(f"  …等共 {len(new_ids)} 个上架")
+            for p in gone_ids[:8]:
+                v = oldp[p]
+                lines.append(f"  ❌ 下架：{v['name']}" + _fmt_detail(
+                    f"地址：{v['addr']}" if v.get("addr") else "",
+                    f"电话：{v['tel']}" if v.get("tel") else ""))
+            if len(gone_ids) > 8:
+                lines.append(f"  …等共 {len(gone_ids)} 个下架")
+
     for rule in PUSH.get("pd_keywords", []):
         if rule.get("ignore"):
             continue
@@ -594,16 +712,17 @@ def build_push_digest(cur_all, pd_items, baseline):
             continue
         sub = _rule_lines(rule, cur["pd"]["keywords"].get(w, {}), _drop_ignored(((baseline.get("pd") or {}).get("keywords") or {}).get(w, {})))
         if sub:
-            lines.append(f"明珠·词条「{w}」：\n  " + "\n  ".join(sub))
+            lines.append(f"【明珠·词条「{w}」】")
+            lines += sub
     return lines, cur
 
 
-def send_test_heartbeat(ssb_items, pd_items):
+def send_test_heartbeat(ssb_items, pd_items, notice_items=None):
     """按当前配置立即发送一条测试心跳（供后台按钮调用）"""
     baseline = load_state().get(HB_BASELINE_KEY)
-    digest, snap = build_push_digest(ssb_items, pd_items, baseline)
+    digest, snap = build_push_digest(ssb_items, pd_items, notice_items or [], baseline)
     lines = ["【房源监控 · 推送测试】", f"时间：{now_bj().strftime('%Y-%m-%d %H:%M')}",
-             f"随申办项目 {snap['total']} ｜ 明珠在线 {len(pd_items or [])}"]
+             f"随申办项目 {snap['total']} ｜ 明珠在线 {len(pd_items or [])} ｜ 供应预告 {len(notice_items or [])}"]
     if digest:
         lines.append("\n━━ 变动 ━━")
         lines += digest
@@ -723,7 +842,15 @@ def send_serverchan(text):
         print("Server酱推送失败：", repr(e))
 
 
+def _limit_bytes(s, n=1900):
+    b = s.encode("utf-8")
+    if len(b) <= n:
+        return s
+    return b[:n].decode("utf-8", "ignore") + "\n…（内容过多已省略）"
+
+
 def push(text, heartbeat=False):
+    text = _limit_bytes(text)
     if SUPPRESS_PUSH:
         print("[静默-不推送] " + text.splitlines()[0][:60])
         return
@@ -1055,7 +1182,7 @@ def run_once(report=False):
     stamp = bj.strftime("%Y-%m-%d %H")
     if bj.hour in HEARTBEAT_HOURS and state.get(HEARTBEAT_KEY) != stamp and cur_all is not None:
         baseline = state.get(HB_BASELINE_KEY)
-        digest, cur_snap = build_push_digest(cur_all, pd, baseline)
+        digest, cur_snap = build_push_digest(cur_all, pd, notice, baseline)
         lines = ["【房源监控 · 定时心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}",
                  f"随申办项目 {cur_snap['total']} ｜ 明珠在线 {len(pd) if pd else 0} ｜ 供应预告 {len(notice) if notice else 0}"]
         if digest:

@@ -248,7 +248,7 @@ def api_test_push(request: Request):
     _sync_mon()
     cur = report.load_current()
     try:
-        msg = mon.send_test_heartbeat(cur.get("ssb", []), cur.get("pd", []))
+        msg = mon.send_test_heartbeat(cur.get("ssb", []), cur.get("pd", []), cur.get("notice", []))
         return {"ok": True, "msg": "已发送测试推送", "preview": msg}
     except Exception as e:
         return {"ok": False, "msg": f"发送失败：{type(e).__name__}: {e}"}
@@ -515,6 +515,7 @@ var rendPD = makeEditor({list:PDKW, tbody:'pdrows', add:'pdadd', api:'/api/pdite
     function rules(arr){ return arr.filter(function(r){return (r.word||'').trim();}).map(function(r){ return {word:r.word.trim(),'new':!!r['new'],updown:!!r.updown,count:!!r.count,ignore:!!r.ignore}; }); }
     var pj={ total_change: !!(document.getElementById('p_total')||{}).checked,
              district_change: !!(document.getElementById('p_dist')||{}).checked,
+             notice: !!(document.getElementById('p_notice')||{}).checked,
              districts: dists,
              pd_updown: !!(document.getElementById('p_pdupdown')||{}).checked,
              keywords: rules(KW),
@@ -623,6 +624,7 @@ def render_dashboard(request, msg=""):
         for d in districts)
     p_total = "checked" if push.get("total_change") else ""
     p_dist = "checked" if push.get("district_change") else ""
+    p_notice = "checked" if push.get("notice", True) else ""
     kw_init = json.dumps([
         {"word": r.get("word", ""), "new": bool(r.get("new")), "updown": bool(r.get("updown")),
          "count": bool(r.get("count")), "ignore": bool(r.get("ignore"))}
@@ -706,6 +708,10 @@ def render_dashboard(request, msg=""):
 
 <div class="pushbox">
   <label class="chk"><input type="checkbox" id="p_total" {p_total}> 随申办总项目数量增减</label>
+</div>
+
+<div class="pushbox">
+  <label class="chk"><input type="checkbox" id="p_notice" {p_notice}> 随申办供应预告变动（新增/移除，含地址/供应日/租金）</label>
 </div>
 
 <div class="pushbox">
@@ -821,6 +827,7 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
         push_cfg = {
             "total_change": bool(pj.get("total_change")),
             "district_change": bool(pj.get("district_change")),
+            "notice": bool(pj.get("notice", True)),
             "districts": [str(d) for d in (pj.get("districts") or []) if str(d).strip()],
             "keywords": rules,
             "pd_updown": bool(pj.get("pd_updown")),
