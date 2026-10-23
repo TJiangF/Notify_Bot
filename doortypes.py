@@ -65,19 +65,32 @@ def _mime(ext):
     return {".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}.get(ext, "image/jpeg")
 
 
+def _sniff(data):
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png", ".png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg", ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif", ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    return "image/jpeg", ".jpg"
+
+
 def photo(file_id):
     file_id = str(file_id)
     if not re.match(r"^[0-9a-fA-F-]{36}$", file_id):
         raise ValueError("bad file id")
-    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         p = os.path.join(IMG_DIR, file_id + ext)
         if os.path.exists(p):
-            return open(p, "rb").read(), _mime(ext)
+            data = open(p, "rb").read()
+            mime, _ = _sniff(data)
+            return data, mime
     r = requests.get(PHOTO, headers=_headers(), params={"doorTypeFileId": file_id}, timeout=30)
     r.raise_for_status()
     data = r.content
-    ct = (r.headers.get("content-type") or "").split(";")[0].strip()
-    ext = ".png" if "png" in ct else (".webp" if "webp" in ct else ".jpg")
+    mime, ext = _sniff(data)
     os.makedirs(IMG_DIR, exist_ok=True)
     open(os.path.join(IMG_DIR, file_id + ext), "wb").write(data)
-    return data, (ct or _mime(ext))
+    return data, mime
