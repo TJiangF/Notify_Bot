@@ -124,6 +124,35 @@ def update_user(email, **fields):
     return d[email]
 
 
+def record_visit(email):
+    d = load_users()
+    email = (email or "").strip().lower()
+    u = d.get(email)
+    if not u:
+        return
+    u["visits_total"] = int(u.get("visits_total") or 0) + 1
+    days = u.get("visits_days") or {}
+    days[today()] = int(days.get(today(), 0)) + 1
+    if len(days) > 30:
+        for k in sorted(days)[:-30]:
+            days.pop(k, None)
+    u["visits_days"] = days
+    u["last_seen"] = now_bj().isoformat(timespec="seconds")
+    save_users(d)
+
+
+def record_login(email):
+    d = load_users()
+    email = (email or "").strip().lower()
+    u = d.get(email)
+    if not u:
+        return
+    u["login_count"] = int(u.get("login_count") or 0) + 1
+    u["last_login"] = now_bj().isoformat(timespec="seconds")
+    u["last_seen"] = u["last_login"]
+    save_users(d)
+
+
 def reg_allowed(ip):
     d = _load(REG_FILE, {})
     return today() not in (d.get(ip) or [])

@@ -406,6 +406,8 @@ def index(request: Request, base: str = Query(None)):
     sel = base if (base in valid) else _pick_base(snaps, int(cfg.get("default_base_days", 1)))
     prev = next((s for s in snaps if s["date"] == sel), snaps[-1])
     u = _logged_user(request)
+    if u:
+        U.record_visit(u["email"])
     can_map = bool(u or _is_admin(request))
     uname = (u.get("name") if u else ("admin" if _is_admin(request) else ""))
     favs = (u.get("favorites") if u else []) or []
@@ -704,6 +706,23 @@ def render_dashboard(request, msg=""):
     push_js = (f'<script>var KW_INIT = {kw_init}; var PDKW_INIT = {pd_kw_init};</script>'
                + ADMIN_PUSH_JS + ADMIN_EXTRA_JS)
 
+    users_all = U.load_users()
+    td = _now().strftime("%Y-%m-%d")
+    urows = []
+    for email, uu in sorted(users_all.items(), key=lambda kv: -(int(kv[1].get("visits_total") or 0))):
+        vs = uu.get("visits_days") or {}
+        pu = uu.get("push") or {}
+        urows.append(
+            f'<tr><td>{esc(email)}</td><td>{esc(uu.get("name"))}</td><td>{esc(uu.get("role") or "user")}</td>'
+            f'<td>{esc((uu.get("created_at") or "")[:10])}</td>'
+            f'<td>{int(uu.get("visits_total") or 0)}</td><td>{int(vs.get(td, 0))}</td>'
+            f'<td>{int(uu.get("login_count") or 0)}</td><td>{esc((uu.get("last_seen") or "")[:16])}</td>'
+            f'<td>{len(uu.get("favorites") or [])}</td>'
+            f'<td>{"是" if pu.get("serverchan") else "否"}</td>'
+            f'<td>{",".join(str(h) for h in (pu.get("hours") or [])) or "—"}</td></tr>')
+    users_table = "".join(urows) or '<tr><td colspan="11" class="muted">暂无用户</td></tr>'
+    today_active = sum(1 for uu in users_all.values() if int((uu.get("visits_days") or {}).get(td, 0)) > 0)
+
     inner = f"""
 <div class="grid">
   <div class="card"><div class="k">报表今日访问</div><div class="v">{today}</div><div class="s">累计 {total} 次</div></div>
@@ -712,6 +731,13 @@ def render_dashboard(request, msg=""):
   <div class="card"><div class="k">明珠在线 今日调用</div><div class="v">{pd_t.get('req',0)}<small> 请求</small></div><div class="s">{pd_t.get('rec',0)} 条记录</div></div>
   <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">08:00–19:00 每 {cfg.get('sched_step',10)} 分钟 + 夜间整点</div></div>
 </div>
+
+<section>
+<h2>用户管理（{len(users_all)} 个账号，今日活跃 {today_active}）</h2>
+<div style="overflow-x:auto">
+<table><thead><tr><th>邮箱</th><th>昵称</th><th>角色</th><th>注册</th><th>访问(总)</th><th>访问(今日)</th><th>登录次数</th><th>最后活跃</th><th>对比数</th><th>Server酱</th><th>心跳整点</th></tr></thead><tbody>{users_table}</tbody></table>
+</div>
+</section>
 
 <section>
 <h2>访问统计 · 今日 IP</h2>
@@ -1144,6 +1170,7 @@ def user_login(request: Request, email: str = Form(""), pw: str = Form("")):
     if not u or not U.verify_pw(pw, u.get("salt", ""), u.get("pw", "")):
         return HTMLResponse(render_user_login("邮箱或密码错误", email))
     request.session["user"] = u["email"]
+    U.record_login(u["email"])
     return RedirectResponse("/", status_code=303)
 
 
