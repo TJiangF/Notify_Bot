@@ -251,7 +251,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 f'<div class="pdcell"><b>供应</b>{esc(supply)}</div>'
                 f'<div class="pdcell"><b>受理</b>{esc(accept)}</div>'
                 f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
-                f'</div><div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div></li>')
+                f'</div><div class="dts" data-pid="{esc(str(x.get("id")))}"><div class="dt-head">户型与图片</div><div class="dt-body"><button type="button" class="dt-load">加载户型信息</button></div></div><div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div></li>')
         ssb_items = "".join(sitems)
         pd = latest["pd"]
         metros = sorted({m.split("/")[0].strip() for x in pd for m in (x.get("metro") or []) if m})
@@ -506,6 +506,26 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .pdcell{{display:block;font-size:13px;color:#333;line-height:1.9;word-break:break-all}}
  .pdcell b{{color:#999;font-weight:400;margin-right:6px;display:inline-block;min-width:44px}}
  .cmts{{margin-top:10px;border-top:1px dashed #e6e8eb;padding-top:10px}}
+ .dts{{margin-top:10px;border-top:1px dashed #e6e8eb;padding-top:10px}}
+ .dt-head{{font-weight:600;font-size:13px;margin-bottom:8px}}
+ .dt-load{{font-size:12px;padding:3px 10px;border:1px solid #2563eb;color:#2563eb;background:#fff;border-radius:14px;cursor:pointer}}
+ .dtgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}}
+ .dtcard{{border:1px solid #e3e8f0;border-radius:10px;overflow:hidden;background:#fff;cursor:pointer}}
+ .dtcard:hover{{box-shadow:0 4px 14px rgba(37,99,235,.15)}}
+ .dtthumb{{aspect-ratio:4/3;background:#f4f6fa;display:flex;align-items:center;justify-content:center;overflow:hidden}}
+ .dtthumb img{{width:100%;height:100%;object-fit:cover}}
+ .dtnoimg{{color:#98a2b3;font-size:12px}}
+ .dtname{{padding:8px;font-size:13px;font-weight:600;text-align:center}}
+ .dtmodal-bg{{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:120;display:flex;align-items:center;justify-content:center;padding:16px}}
+ .dtmodal{{background:#fff;border-radius:14px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:16px}}
+ .dtm-head{{display:flex;justify-content:space-between;align-items:center;font-size:16px;margin-bottom:10px}}
+ .dtm-x{{border:0;background:none;font-size:22px;cursor:pointer;color:#666;line-height:1}}
+ .dtm-table{{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px}}
+ .dtm-table td{{padding:6px 4px;border-bottom:1px solid #eef0f3}}
+ .dtm-table td:first-child{{color:#667085;width:120px}}
+ .dtm-imgs{{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}}
+ .dtm-imgs img{{width:100%;border-radius:8px;background:#f4f6fa}}
+ @media(max-width:520px){{ .dtgrid{{grid-template-columns:repeat(2,1fr)}} .dtmodal{{padding:12px}} }}
  .cmt-title{{font-size:12px;color:#8794a8;margin-bottom:6px}}
  .cmt{{border:1px solid #eef0f3;border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fff}}
  .cmt-meta{{font-size:11px;color:#a3adbd;margin-bottom:4px}}
@@ -921,6 +941,58 @@ if(LOGGED_IN){{
   }}).catch(function(){{}});
 }}
 function jesc(t){{ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }}
+function loadDoortypes(li){{
+  var box=li.querySelector('.dts'); if(!box) return;
+  if(box.dataset.loaded==='1') return;
+  var pid=box.getAttribute('data-pid'); if(!pid) return;
+  box.dataset.loaded='1';
+  var body=box.querySelector('.dt-body');
+  body.innerHTML='<div class="muted">加载中…</div>';
+  fetch('/api/doortypes?projectId='+encodeURIComponent(pid)).then(function(r){{return r.json();}}).then(function(d){{
+    if(!d||!d.ok){{ body.innerHTML='<div class="muted">'+jesc((d&&d.msg)||'暂无户型数据')+'</div>'; box.dataset.loaded=''; return; }}
+    renderDoortypes(d, body);
+  }}).catch(function(){{ body.innerHTML='<div class="muted">加载失败</div>'; box.dataset.loaded=''; }});
+}}
+function renderDoortypes(d, body){{
+  var dts=d.doorTypes||[];
+  if(!dts.length){{ body.innerHTML='<div class="muted">暂无户型</div>'; return; }}
+  var h='<div class="dtgrid">';
+  dts.forEach(function(x,i){{
+    var t=x.doorType||{{}}, files=x.files||[];
+    var plan=null;
+    files.forEach(function(f){{ if(!plan && String(f.fileKind)==='1') plan=f; }});
+    if(!plan && files.length) plan=files[0];
+    var img=plan?('<img loading="lazy" src="/api/doortype_photo?fileId='+encodeURIComponent(plan.fileId)+'">'):'<div class="dtnoimg">暂无图片</div>';
+    h+='<div class="dtcard" data-i="'+i+'"><div class="dtthumb">'+img+'</div><div class="dtname">'+jesc(t.doorTypeName||'户型')+'</div></div>';
+  }});
+  h+='</div>';
+  body.innerHTML=h;
+  body.querySelectorAll('.dtcard').forEach(function(c){{
+    c.addEventListener('click', function(){{ openDoorType(d, +c.getAttribute('data-i')); }});
+  }});
+}}
+function openDoorType(d, idx){{
+  var x=(d.doorTypes||[])[idx]; if(!x) return;
+  var t=x.doorType||{{}}, files=x.files||[];
+  function v(s){{ return (s==null||s==='')?'—':s; }}
+  var rows=[
+    ['面积区间', v(t.areaLow)+' – '+v(t.areaHigh)+' ㎡'],
+    ['户型租金区间', v(t.rentLow)+' – '+v(t.rentHigh)+' 元/月'],
+    ['计划套数', v(t.planTotalFlatNum)],
+    ['总套数', v(t.totalFlatNum)],
+    ['在线套数', v(t.onlineFlatNum)],
+    ['可租套数', v(t.rentFlatNum)],
+    ['轮候人数', v(t.turnPersonNum)]
+  ];
+  var h='<div class="dtmodal-bg" onclick="if(event.target===this)closeDoorType()"><div class="dtmodal"><div class="dtm-head"><b>'+jesc(t.doorTypeName||'户型')+'</b><button class="dtm-x" onclick="closeDoorType()">×</button></div><table class="dtm-table">';
+  rows.forEach(function(r){{ h+='<tr><td>'+r[0]+'</td><td>'+jesc(r[1])+'</td></tr>'; }});
+  h+='</table><div class="dtm-imgs">';
+  files.forEach(function(f){{ if(f&&f.fileId){{ h+='<img loading="lazy" src="/api/doortype_photo?fileId='+encodeURIComponent(f.fileId)+'">'; }} }});
+  h+='</div></div></div>';
+  var old=document.getElementById('dtmodal'); if(old) old.remove();
+  var el=document.createElement('div'); el.id='dtmodal'; el.innerHTML=h; document.body.appendChild(el);
+}}
+function closeDoorType(){{ var el=document.getElementById('dtmodal'); if(el) el.remove(); }}
 function loadComments(c){{
   if(!c || c.dataset.loaded) return;
   c.dataset.loaded='1';
@@ -959,8 +1031,12 @@ function renderComments(c, key, list){{
 }}
 document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('click', function(){{
   var item=h.parentNode; item.classList.toggle('open');
-  if(item.classList.contains('open')){{ var c=item.querySelector('.cmts'); if(c) loadComments(c); }}
+  if(item.classList.contains('open')){{ var c=item.querySelector('.cmts'); if(c) loadComments(c); var d=item.querySelector('.dts'); if(d) loadDoortypes(item); }}
 }}); }});
+document.addEventListener('click', function(e){{
+  var b=e.target.closest&&e.target.closest('.dt-load');
+  if(b){{ e.stopPropagation(); loadDoortypes(b.closest('.pditem')); }}
+}});
 document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.addEventListener('change', filterPd); }});
 ['pd_fmin','pd_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterPd); }});
 filterPd();
@@ -1056,6 +1132,16 @@ window.addEventListener('load', function(){{
   var m=(location.search.match(/[?&]q=([^&]*)/));
   if(m && mq){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
 }});
+(function(){{
+  var m=(location.search.match(/[?&]ex=([^&]*)/));
+  if(!m) return;
+  var pid=decodeURIComponent(m[1]);
+  var li=document.querySelector('.pditem[data-key="ssb:'+pid+'"]');
+  if(!li) return;
+  li.classList.add('open');
+  var c=li.querySelector('.cmts'); if(c) loadComments(c);
+  loadDoortypes(li);
+}})();
 </script>
 </body></html>"""
 

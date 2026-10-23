@@ -9,7 +9,7 @@ import re
 import requests
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -20,6 +20,7 @@ import config as cfgmod  # noqa: E402
 import geocode  # noqa: E402
 import ssb_monitor as mon  # noqa: E402
 import users as U  # noqa: E402
+import doortypes as DT  # noqa: E402
 
 ADMIN_PATH = os.environ.get("SSB_ADMIN_PATH", "/admin")
 ADMIN_PW = os.environ.get("SSB_ADMIN_PASSWORD", "change-me")
@@ -224,6 +225,32 @@ def api_pditems(w: str = ""):
                           "ignored": ("pd:" + pid) in ign})
     items.sort(key=lambda a: -(a.get("online") or 0))
     return {"ok": True, "count": len(items), "items": items}
+
+
+@app.get("/api/doortypes")
+def api_doortypes(projectId: str = ""):
+    pid = (projectId or "").strip()
+    if not pid.isdigit():
+        return {"ok": False, "msg": "缺少项目ID"}
+    try:
+        rec = DT.fetch(pid)
+    except Exception as e:
+        return {"ok": False, "msg": f"获取失败：{type(e).__name__}"}
+    if not rec:
+        return {"ok": False, "msg": "暂无户型数据"}
+    return {"ok": True, "project": rec.get("project"), "doorTypes": rec.get("doorTypes")}
+
+
+@app.get("/api/doortype_photo")
+def api_doortype_photo(fileId: str = ""):
+    fid = (fileId or "").strip()
+    if not re.match(r"^[0-9a-fA-F-]{36}$", fid):
+        return Response(status_code=400)
+    try:
+        data, mime = DT.photo(fid)
+    except Exception:
+        return Response(status_code=404)
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
 
 
 def _sync_mon():
