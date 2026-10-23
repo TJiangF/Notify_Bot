@@ -412,6 +412,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  h1{{font-size:22px;margin:0 0 4px}}
  .sub{{color:#666;font-size:14px;margin:6px 0 18px;line-height:1.9}}
  .stalebar{{background:#fff7e6;border:1px solid #ffd591;color:#ad6800;border-radius:8px;padding:9px 12px;font-size:13px;margin:-8px 0 16px}}
+ .icp-footer{{text-align:center;color:#98a2b3;font-size:12px;padding:22px 0 30px;margin-top:16px;border-top:1px solid #e6e8eb}}
+ .icp-footer a{{color:#98a2b3;text-decoration:none}}
+ .icp-footer a:hover{{color:#2563eb}}
  .sub select{{padding:4px 8px;border:1px solid #ccc;border-radius:6px;font-size:14px}}
  .cards{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}}
  .card{{background:#fff;border-radius:10px;padding:14px 18px;flex:1;min-width:150px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
@@ -625,6 +628,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2 id="sec-trend">逐日趋势</h2>
 <table><thead><tr><th>日期</th><th>随申办项目</th><th>随申办在线</th><th>明珠项目</th><th>明珠可租</th></tr></thead>
 <tbody>{trend_table}</tbody></table>
+<div class="icp-footer"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">苏ICP备2026080883号</a></div>
 </div>
 <a class="cmp-fab push-fab" href="/account">🔔 推送设置</a>
 <button id="cmpFab" class="cmp-fab" onclick="toggleCompare()">对比 <span id="cmpFabN">0</span></button>

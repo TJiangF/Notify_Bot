@@ -613,7 +613,7 @@ def _user_shell(inner):
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>我的账号</title>
 <style>{ADMIN_CSS}</style></head><body>
 <div class="top"><h1>房源监控 · 我的账号</h1><a href="/">返回报表</a>　｜　<a href="/logout">退出登录</a></div>
-<div class="wrap">{inner}</div></body></html>"""
+<div class="wrap">{inner}<div style="text-align:center;color:#98a2b3;font-size:12px;padding:22px 0 30px;border-top:1px solid #e6e8eb;margin-top:16px">苏ICP备2026080883号</div></div></body></html>"""
 
 
 def render_login(err=""):
