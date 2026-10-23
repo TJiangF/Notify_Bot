@@ -634,7 +634,7 @@ def _shell(inner, request):
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>管理后台</title>
 <style>{ADMIN_CSS}</style></head><body>
-<div class="top"><h1>房源监控 · 管理后台</h1><a href="/logout">退出登录</a></div>
+<div class="top"><h1>房源监控 · 管理后台</h1><a href="/">返回报表</a>　｜　<a href="/account">我的账号</a>　｜　<a href="/logout">退出登录</a></div>
 <div class="wrap">{inner}</div></body></html>"""
 
 
