@@ -1025,6 +1025,14 @@ window.addEventListener('load', function(){{
   }});
   var m=(location.search.match(/[?&]q=([^&]*)/));
   if(m){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
+  var hm=(location.hash||'').match(/hx=([0-9]+)/);
+  if(hm){{
+    var w=document.querySelector('.hxwrap[data-pid="'+hm[1]+'"]');
+    if(w){{
+      var li=w.closest('.pditem'); if(li){{ if(!li.classList.contains('open')) li.querySelector('.pdhead').click(); }}
+      hxBtnClick({{target:w.querySelector('.hxbtn')}});
+    }}
+  }}
 }});
 function hxPE(s){{ return String(s==null?'':s).replace(/[&<>"']/g,function(c){{return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c];}}); }}
 function hxBtnClick(e){{
