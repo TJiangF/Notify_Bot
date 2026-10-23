@@ -53,6 +53,7 @@ IGNORE = {
     "4594": "森兰星遇公寓(新展城店)",
     "3025": "城家高级公寓（森兰洲海路地铁站店）",
 }
+EXTRA_IGNORE = set()
 
 PUSH = {"total_change": True, "district_change": False, "districts": [], "keywords": []}
 
@@ -475,7 +476,7 @@ def _kw_map(cur_all, word):
         name = it.get("projectName") or it.get("name") or ""
         if word in name:
             pid = str(it.get("projectId") or it.get("id"))
-            if pid in IGNORE:
+            if pid in IGNORE or pid in EXTRA_IGNORE:
                 continue
             online = it.get("onlineFlatNum")
             if online is None:
@@ -492,7 +493,7 @@ def _pd_kw_map(pd_items, word):
         name = it.get("villageProjectName") or it.get("name") or ""
         if word in name:
             pid = str(it.get("projectId") or it.get("id"))
-            if ("pd:" + pid) in IGNORE:
+            if ("pd:" + pid) in IGNORE or ("pd:" + pid) in EXTRA_IGNORE:
                 continue
             kz = it.get("kzts")
             if kz is None:
@@ -507,7 +508,7 @@ def _pd_projects(pd_items):
     m = {}
     for it in pd_items or []:
         pid = str(it.get("projectId") or it.get("id"))
-        if ("pd:" + pid) in IGNORE:
+        if ("pd:" + pid) in IGNORE or ("pd:" + pid) in EXTRA_IGNORE:
             continue
         kz = it.get("kzts")
         m[pid] = {"name": it.get("villageProjectName") or it.get("name") or "",
@@ -571,7 +572,7 @@ def project_snapshot(cur_all, pd_items=None, notice=None, push_cfg=None):
 
 
 def _drop_ignored(m):
-    return {p: v for p, v in (m or {}).items() if p not in IGNORE and ("pd:" + p) not in IGNORE}
+    return {p: v for p, v in (m or {}).items() if p not in IGNORE and p not in EXTRA_IGNORE and ("pd:" + p) not in IGNORE and ("pd:" + p) not in EXTRA_IGNORE}
 
 
 def _fmt_detail(*parts):
@@ -881,6 +882,7 @@ def send_serverchan_key(key, text):
 
 def push_users(cur_all, pd_items, notice):
     """按每个用户选定的整点/内容，用自己的 Server酱 推送（每天≤5次）"""
+    global EXTRA_IGNORE
     try:
         import users as _U
     except Exception:
@@ -900,12 +902,15 @@ def push_users(cur_all, pd_items, notice):
         if u.get("last_push_hour") == stamp:
             continue
         cfg = pc.get("content") or {}
+        EXTRA_IGNORE = set(str(k) for k in (cfg.get("ignore") or {}).keys())
         baseline = u.get("push_baseline")
         try:
             digest, snap = build_push_digest(cur_all, pd_items, notice, baseline, cfg)
         except Exception as e:
             print("用户摘要生成失败:", email, repr(e))
+            EXTRA_IGNORE = set()
             continue
+        EXTRA_IGNORE = set()
         body = (f"时间：{bj.strftime('%Y-%m-%d %H:%M')}\n"
                 f"随申办项目 {len(cur_all)} ｜ 明珠在线 {len(pd_items or [])} ｜ 供应预告 {len(notice or [])}")
         if digest:

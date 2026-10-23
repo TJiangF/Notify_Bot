@@ -538,7 +538,7 @@ var rendSSB = makeEditor({list:KW, tbody:'kwrows', add:'kwadd', api:'/api/kwitem
 var rendPD = makeEditor({list:PDKW, tbody:'pdrows', add:'pdadd', api:'/api/pditems', prefix:'pd:', kwc:'pdc_', kwi:'pdi_'});
 
 (function(){
-  var form=document.querySelector('form[action$="/save"]');
+  var form=document.querySelector('form[action$="/save"], form[action="/account"]');
   if(form) form.addEventListener('submit', function(){
     var dists=[]; document.querySelectorAll('.dist:checked').forEach(function(c){ dists.push(c.value); });
     function rules(arr){ return arr.filter(function(r){return (r.word||'').trim();}).map(function(r){ return {word:r.word.trim(),'new':!!r['new'],updown:!!r.updown,count:!!r.count,ignore:!!r.ignore}; }); }
@@ -605,6 +605,14 @@ def _shell(inner, request):
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>管理后台</title>
 <style>{ADMIN_CSS}</style></head><body>
 <div class="top"><h1>房源监控 · 管理后台</h1><a href="{ADMIN_PATH}/logout">退出登录</a></div>
+<div class="wrap">{inner}</div></body></html>"""
+
+
+def _user_shell(inner):
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>我的账号</title>
+<style>{ADMIN_CSS}</style></head><body>
+<div class="top"><h1>房源监控 · 我的账号</h1><a href="/">返回报表</a>　｜　<a href="/logout">退出登录</a></div>
 <div class="wrap">{inner}</div></body></html>"""
 
 
@@ -982,7 +990,7 @@ def render_account(request, u):
     content = push.get("content") or {}
     sel_dists = set(content.get("districts") or [])
     dist_checks = "".join(
-        f'<label class="chk" style="margin:2px 12px 2px 0"><input type="checkbox" class="udist" value="{esc(d)}"'
+        f'<label class="chk" style="margin:2px 12px 2px 0"><input type="checkbox" class="dist" value="{esc(d)}"'
         f'{" checked" if d in sel_dists else ""}> {esc(d)}</label>'
         for d in districts) or '<span class="muted">（暂无行政区数据）</span>'
 
@@ -992,108 +1000,87 @@ def render_account(request, u):
 
     kw_init = json.dumps(content.get("keywords") or [], ensure_ascii=False)
     pd_init = json.dumps(content.get("pd_keywords") or [], ensure_ascii=False)
+    ignore = json.dumps(content.get("ignore") or {}, ensure_ascii=False, indent=1)
     fav_items = _fav_items(u.get("favorites") or [])
     fav_html = "".join(
         f'<div style="padding:6px 0;border-bottom:1px solid #eef0f3;font-size:13px"><b>{esc(it["name"])}</b> '
         f'<span class="muted">{esc(it["src"])}｜{esc(it["addr"])}</span></div>'
         for it in fav_items) or '<div class="muted">暂无对比记录（在报表房源处点“加入比较”即可，最多 5 条）</div>'
     sc_hint = (f"已设置（…{esc(sc[-4:])}）" if sc else "未设置")
-    body = f'''<p class="muted" style="margin:0 0 14px">账号：{esc(u.get("email"))}　昵称：{esc(u.get("name"))}　
-<a href="/logout">退出登录</a>　｜　<a href="/">返回报表</a></p>
+    inner = f'''
+<div class="grid">
+  <div class="card"><div class="k">我的账号</div><div class="v" style="font-size:15px">{esc(u.get("email"))}</div><div class="s">昵称 {esc(u.get("name"))}</div></div>
+  <div class="card"><div class="k">我的对比</div><div class="v">{len(fav_items)}<small> / 5</small></div><div class="s">在报表点“加入比较”即可</div></div>
+</div>
+
+<section>
+<h2>推送渠道与时间</h2>
 <form method="post" action="/account">
   <label class="f">Server酱 SendKey（可粘贴完整链接，当前：{sc_hint}）</label>
   <input name="serverchan" placeholder="https://sctapi.ftqq.com/SCTxxxxx.send 或直接填 SendKey">
   <div class="muted" style="margin-top:6px">还没有 SendKey？前往官方获取：<a href="https://sct.ftqq.com/" target="_blank" rel="noopener">https://sct.ftqq.com/</a></div>
   <label class="f" style="margin-top:14px">心跳推送小时（最多选 3 个；推荐白天 8:00–22:00）</label>
-  <div style="max-height:130px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
-  <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上发一条测试。一天最多 3 次心跳，含特殊情况合计最多 5 次/天。</div>
+  <div style="max-height:150px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
+  <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上手动发一条测试。一天最多 3 次心跳，含特殊情况合计最多 5 次/天。</div>
 
-  <h3 style="margin:20px 0 6px">推送内容（自定义）</h3>
-  <div class="pushbox"><label class="chk"><input type="checkbox" id="u_total" {ck(content.get("total_change"), True)}> 随申办总项目数量增减</label></div>
-  <div class="pushbox"><label class="chk"><input type="checkbox" id="u_notice" {ck(content.get("notice"), True)}> 随申办供应预告（新增/移除）</label></div>
+  <h2 style="margin-top:22px">推送内容</h2>
+
   <div class="pushbox">
-    <label class="chk"><input type="checkbox" id="u_dist" {ck(content.get("district_change"))}> 随申办特定行政区项目增减</label>
+    <label class="chk"><input type="checkbox" id="p_total" {ck(content.get("total_change"), True)}> 随申办总项目数量增减</label>
+  </div>
+  <div class="pushbox">
+    <label class="chk"><input type="checkbox" id="p_notice" {ck(content.get("notice"), True)}> 随申办供应预告变动（新增/移除，含地址/供应日/租金）</label>
+  </div>
+  <div class="pushbox">
+    <label class="chk"><input type="checkbox" id="p_dist" {ck(content.get("district_change"))}> 随申办特定行政区项目数量增减</label>
+    <div class="muted" style="margin:6px 0 4px">勾选要关注的行政区（可多选）：</div>
     <div class="distlist">{dist_checks}</div>
   </div>
   <div class="pushbox">
-    <div style="font-weight:600;margin-bottom:6px">随申办特定词条（最多 10）</div>
-    <table class="kwtbl"><thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th></th></tr></thead><tbody id="ukwrows"></tbody></table>
-    <button type="button" id="ukwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+    <div style="font-weight:600;margin-bottom:6px">随申办特定词条房源变动（最多 10 个）</div>
+    <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；下方逐条列出命中项目，<b>勾选项目前的方框 = 忽略该房源（不推送）</b>，不勾选 = 正常推送；命中超过 10 个说明词条太宽泛，建议修改。</div>
+    <table class="kwtbl">
+      <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
+      <tbody id="kwrows"></tbody>
+    </table>
+    <button type="button" id="kwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
   </div>
   <div class="pushbox">
-    <label class="chk"><input type="checkbox" id="u_pdup" {ck(content.get("pd_updown"))}> 明珠在线项目上下线</label>
-    <div style="font-weight:600;margin:14px 0 6px">明珠在线特定词条（最多 10）</div>
-    <table class="kwtbl"><thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th></th></tr></thead><tbody id="updrows"></tbody></table>
-    <button type="button" id="updadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
+    <label class="chk"><input type="checkbox" id="p_pdupdown" {ck(content.get("pd_updown"))}> 明珠在线项目上下线</label>
+    <div style="font-weight:600;margin:14px 0 6px">明珠在线特定词条房源变动（最多 10 个）</div>
+    <div class="muted" style="margin-bottom:8px">规则同随申办；逐条列出的命中项目，<b>勾选 = 忽略（不推送）</b>。</div>
+    <table class="kwtbl">
+      <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
+      <tbody id="pdrows"></tbody>
+    </table>
+    <button type="button" id="pdadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
   </div>
-  <input type="hidden" name="push_json" id="u_push_json">
-
-  <p><button style="margin-top:14px">保存</button> <button type="button" id="utest" class="ghost">立即推送一次（测试）</button> <span id="utest_msg" class="muted"></span></p>
+  <div class="pushbox">
+    <div style="font-weight:600;margin-bottom:6px">推送测试</div>
+    <div class="muted" style="margin-bottom:8px">按当前<b>已保存</b>的设置立即发送一条测试推送（建议先保存再测试）。</div>
+    <button type="button" id="testpush" class="ghost">立即推送一次（测试）</button>
+    <span id="testpush_msg" class="muted" style="margin-left:10px"></span>
+  </div>
+  <input type="hidden" name="push_json" id="push_json">
+  <details style="margin-top:10px"><summary class="muted">高级：忽略名单（项目ID→名称，JSON）</summary>
+  <textarea name="ignore" id="ignore_ta" rows="4">{ignore}</textarea></details>
+  <p><button style="margin-top:14px">保存配置</button> <span class="muted">保存后监控下一轮生效</span></p>
 </form>
-<label class="f" style="margin-top:16px">我的对比（{len(fav_items)}/5）</label>
+</section>
+
+<section>
+<h2>我的对比（{len(fav_items)}/5）</h2>
 <div>{fav_html}</div>
-<script>
-var UKW = {kw_init};
-var UPDKW = {pd_init};
-function uEsc(s){{return String(s==null?'':s).replace(/[&<>"']/g,function(c){{return {{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c];}});}}
-function uRender(list, tbodyId, addId){{
-  var tb=document.getElementById(tbodyId); if(!tb) return; tb.innerHTML='';
-  list.forEach(function(r,i){{
-    var tr=document.createElement('tr');
-    tr.innerHTML='<td style="text-align:left"><input type="text" class="ukw" data-i="'+i+'" value="'+uEsc(r.word)+'" placeholder="如：森兰"></td>'
-      +'<td><input type="checkbox" class="unew" data-i="'+i+'" '+(r['new']?'checked':'')+'></td>'
-      +'<td><input type="checkbox" class="uup" data-i="'+i+'" '+(r.updown?'checked':'')+'></td>'
-      +'<td><input type="checkbox" class="ucnt" data-i="'+i+'" '+(r.count?'checked':'')+'></td>'
-      +'<td><input type="checkbox" class="uign" data-i="'+i+'" '+(r.ignore?'checked':'')+'></td>'
-      +'<td><button type="button" class="ghost udel" data-i="'+i+'">删除</button></td>';
-    tb.appendChild(tr);
-  }});
-  var add=document.getElementById(addId); if(add) add.disabled = list.length>=10;
-}}
-function uBind(tbodyId, list, addId){{
-  var tb=document.getElementById(tbodyId); if(!tb) return;
-  tb.addEventListener('input', function(e){{
-    var t=e.target; if(!t.classList.contains('ukw')) return; var i=+t.getAttribute('data-i'); if(!isNaN(i)) list[i].word=t.value;
-  }});
-  tb.addEventListener('change', function(e){{
-    var t=e.target, i=+t.getAttribute('data-i'); if(isNaN(i)) return;
-    if(t.classList.contains('unew')) list[i]['new']=t.checked;
-    else if(t.classList.contains('uup')) list[i].updown=t.checked;
-    else if(t.classList.contains('ucnt')) list[i].count=t.checked;
-    else if(t.classList.contains('uign')) list[i].ignore=t.checked;
-  }});
-  tb.addEventListener('click', function(e){{
-    if(e.target.classList.contains('udel')){{ list.splice(+e.target.getAttribute('data-i'),1); uRender(list, tbodyId, addId); }}
-  }});
-  var add=document.getElementById(addId);
-  if(add) add.addEventListener('click', function(){{ if(list.length<10){{ list.push({{word:'',new:true,updown:true,count:true,ignore:false}}); uRender(list, tbodyId, addId); }} }});
-}}
-uRender(UKW,'ukwrows','ukwadd'); uRender(UPDKW,'updrows','updadd');
-uBind('ukwrows',UKW,'ukwadd'); uBind('updrows',UPDKW,'updadd');
-(function(){{
-  var b=document.getElementById('utest');
-  if(b) b.addEventListener('click', function(){{
-    b.disabled=true; var o=document.getElementById('utest_msg'); if(o) o.textContent='发送中…';
-    fetch('/api/user_test_push',{{method:'POST'}}).then(function(r){{return r.json();}}).then(function(d){{
-      if(o) o.textContent=(d&&d.msg)||'完成'; b.disabled=false;
-    }}).catch(function(){{ if(o) o.textContent='发送失败'; b.disabled=false; }});
-  }});
-  var form=document.querySelector('form[action="/account"]');
-  if(form) form.addEventListener('submit', function(){{
-    var dists=[]; document.querySelectorAll('.udist:checked').forEach(function(c){{dists.push(c.value);}});
-    function rules(arr){{ return arr.filter(function(r){{return (r.word||'').trim();}}).map(function(r){{return {{word:r.word.trim(),'new':!!r['new'],updown:!!r.updown,count:!!r.count,ignore:!!r.ignore}};}}); }}
-    var pj={{ total_change: !!(document.getElementById('u_total')||{{}}).checked,
-              notice: !!(document.getElementById('u_notice')||{{}}).checked,
-              district_change: !!(document.getElementById('u_dist')||{{}}).checked,
-              districts: dists,
-              pd_updown: !!(document.getElementById('u_pdup')||{{}}).checked,
-              keywords: rules(UKW),
-              pd_keywords: rules(UPDKW) }};
-    document.getElementById('u_push_json').value=JSON.stringify(pj);
-  }});
-}})();
-</script>'''
-    return _auth_page("我的账号", body)
+</section>
+'''
+    js = (f'<script>var KW_INIT = {kw_init}; var PDKW_INIT = {pd_init};</script>'
+          + ADMIN_PUSH_JS
+          + '<script>(function(){var b=document.getElementById("testpush");'
+            'if(b)b.addEventListener("click",function(){b.disabled=true;var o=document.getElementById("testpush_msg");'
+            'if(o)o.textContent="发送中…";fetch("/api/user_test_push",{method:"POST"}).then(function(r){return r.json();})'
+            '.then(function(d){if(o)o.textContent=(d&&d.msg)||"完成";b.disabled=false;})'
+            '.catch(function(){if(o)o.textContent="发送失败";b.disabled=false;});});})();</script>')
+    return _user_shell(inner + js)
 
 
 @app.get("/register", response_class=HTMLResponse)
@@ -1158,7 +1145,7 @@ def account_page(request: Request):
 
 @app.post("/account")
 def account_save(request: Request, serverchan: str = Form(""), hours: list[int] = Form(default=[]),
-                 push_json: str = Form("")):
+                 push_json: str = Form(""), ignore: str = Form("{}")):
     u = _logged_user(request)
     if not u:
         return RedirectResponse("/login", status_code=303)
@@ -1198,6 +1185,13 @@ def account_save(request: Request, serverchan: str = Form(""), hours: list[int] 
                 "keywords": rules(pj.get("keywords")),
                 "pd_keywords": rules(pj.get("pd_keywords")),
             }
+            try:
+                ig = json.loads(ignore) if ignore.strip() else {}
+                if not isinstance(ig, dict):
+                    ig = {}
+            except Exception:
+                ig = {}
+            push["content"]["ignore"] = {str(k): str(v) for k, v in ig.items()}
     U.update_user(u["email"], push=push, push_baseline=None)
     return RedirectResponse("/account", status_code=303)
 
