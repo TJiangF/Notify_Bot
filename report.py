@@ -1136,11 +1136,14 @@ window.addEventListener('load', function(){{
   var m=(location.search.match(/[?&]ex=([^&]*)/));
   if(!m) return;
   var pid=decodeURIComponent(m[1]);
+  var wrap=document.getElementById('sbwrap');
+  if(wrap){{ wrap.style.display='block'; var btn=document.querySelector('.listhead .tbtn'); if(btn) btn.textContent='收起列表 ▴'; }}
   var li=document.querySelector('.pditem[data-key="ssb:'+pid+'"]');
   if(!li) return;
   li.classList.add('open');
   var c=li.querySelector('.cmts'); if(c) loadComments(c);
   loadDoortypes(li);
+  setTimeout(function(){{ li.scrollIntoView({{block:'start'}}); }}, 400);
 }})();
 </script>
 </body></html>"""
