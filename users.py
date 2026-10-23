@@ -173,7 +173,7 @@ def push_count_today(u):
     return int(u.get("push_count") or 0)
 
 
-def push_take(email, limit=5):
+def push_take(email, limit=6):
     d = load_users()
     u = d.get(email)
     if not u:

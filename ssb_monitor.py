@@ -917,13 +917,13 @@ def push_users(cur_all, pd_items, notice):
             body += "\n\n━━ 变动 ━━\n" + "\n".join(digest)
         else:
             body += "\n（按你的设置本轮暂无可推送的变动）"
-        ok, n = _U.push_take(email, 5)
+        ok, n = _U.push_take(email, 6)
         if not ok:
             print(f"用户推送已达上限: {email}")
             continue
         if send_serverchan_key(key, "【房源监控 · 定时推送】\n" + body):
             _U.update_user(email, last_push_hour=stamp, push_baseline=snap)
-            print(f"用户推送已发送: {email} ({n}/5)")
+            print(f"用户推送已发送: {email} ({n}/6)")
 
 
 def push(text, heartbeat=False):

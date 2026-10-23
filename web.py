@@ -481,7 +481,7 @@ function makeEditor(cfg){
       var items=(d&&d.items)||[];
       if(cnt){ cnt.textContent=items.length+' 个项目'+(items.length>10?'（太宽泛，请修改）':''); cnt.className='kwcount'+(items.length>10?' warn':''); }
       if(!items.length){ box.innerHTML='<span class="muted">（暂无命中）</span>'; return; }
-      box.innerHTML=items.map(function(it){
+      box.innerHTML='<b style="margin-right:6px;color:#c0392b">忽略名单：</b>'+items.map(function(it){
         var pid=pfx+String(it.id);
         var chk=(IGN[pid]!==undefined)?'checked':'';
         return '<label class="kwitem"><input type="checkbox" class="kwignite" data-pid="'+kwEsc(pid)+'" data-name="'+kwEsc(it.name)+'" '+chk+'> '+kwEsc(it.name)+'（'+(it.online||0)+' 套）</label>';
@@ -1008,6 +1008,7 @@ def render_account(request, u):
         for it in fav_items) or '<div class="muted">暂无对比记录（在报表房源处点“加入比较”即可，最多 5 条）</div>'
     sc_hint = (f"已设置（…{esc(sc[-4:])}）" if sc else "未设置")
     inner = f'''
+<div style="margin-bottom:12px"><a href="/" style="display:inline-block;background:#2563eb;color:#fff;border-radius:8px;padding:8px 16px;font-size:14px;text-decoration:none">← 返回报表</a></div>
 <div class="grid">
   <div class="card"><div class="k">我的账号</div><div class="v" style="font-size:15px">{esc(u.get("email"))}</div><div class="s">昵称 {esc(u.get("name"))}</div></div>
   <div class="card"><div class="k">我的对比</div><div class="v">{len(fav_items)}<small> / 5</small></div><div class="s">在报表点“加入比较”即可</div></div>
@@ -1021,7 +1022,7 @@ def render_account(request, u):
   <div class="muted" style="margin-top:6px">还没有 SendKey？前往官方获取：<a href="https://sct.ftqq.com/" target="_blank" rel="noopener">https://sct.ftqq.com/</a></div>
   <label class="f" style="margin-top:14px">心跳推送小时（最多选 3 个；推荐白天 8:00–22:00）</label>
   <div style="max-height:150px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
-  <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上手动发一条测试。一天最多 3 次心跳，含特殊情况合计最多 5 次/天。</div>
+  <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上手动发一条测试。每日心跳推送最多 3 次；心跳以及下面的定制化推送合计最多 6 次。</div>
 
   <h2 style="margin-top:22px">推送内容</h2>
 
@@ -1224,9 +1225,9 @@ def api_user_test_push(request: Request):
     key = (u.get("push") or {}).get("serverchan", "")
     if not key:
         return {"ok": False, "msg": "请先填写 Server酱 SendKey 并保存"}
-    ok, n = U.push_take(u["email"], 5)
+    ok, n = U.push_take(u["email"], 6)
     if not ok:
-        return {"ok": False, "msg": "今日推送次数已达 5 次上限"}
+        return {"ok": False, "msg": "今日推送次数已达 6 次上限"}
     text = "【房源监控·测试推送】\n时间：" + U.now_bj().strftime("%Y-%m-%d %H:%M") + "\n收到此消息即表示你的 Server酱 配置成功。"
     sent = _send_sc(key, text)
     return {"ok": sent, "msg": "已发送，请查收" if sent else "发送失败，请检查 SendKey"}
