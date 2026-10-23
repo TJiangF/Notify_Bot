@@ -524,7 +524,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .dtm-table td{{padding:6px 4px;border-bottom:1px solid #eef0f3}}
  .dtm-table td:first-child{{color:#667085;width:120px}}
  .dtm-imgs{{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}}
- .dtm-imgs img{{width:100%;border-radius:8px;background:#f4f6fa}}
+ .dtm-imgs img{{width:100%;border-radius:8px;background:#f4f6fa;cursor:zoom-in}}
+ .imgzoom{{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;display:flex;align-items:center;justify-content:center;padding:10px;cursor:zoom-out}}
+ .imgzoom img{{max-width:96vw;max-height:94vh;object-fit:contain;border-radius:6px}}
  @media(max-width:520px){{ .dtgrid{{grid-template-columns:repeat(2,1fr)}} .dtmodal{{padding:12px}} }}
  .cmt-title{{font-size:12px;color:#8794a8;margin-bottom:6px}}
  .cmt{{border:1px solid #eef0f3;border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fff}}
@@ -991,8 +993,15 @@ function openDoorType(d, idx){{
   h+='</div></div></div>';
   var old=document.getElementById('dtmodal'); if(old) old.remove();
   var el=document.createElement('div'); el.id='dtmodal'; el.innerHTML=h; document.body.appendChild(el);
+  el.querySelectorAll('.dtm-imgs img').forEach(function(im){{ im.addEventListener('click', function(ev){{ ev.stopPropagation(); openImgZoom(im.getAttribute('src')); }}); }});
 }}
 function closeDoorType(){{ var el=document.getElementById('dtmodal'); if(el) el.remove(); }}
+function openImgZoom(src){{
+  var z=document.createElement('div'); z.className='imgzoom';
+  var im=document.createElement('img'); im.src=src; z.appendChild(im);
+  z.addEventListener('click', function(){{ z.remove(); }});
+  document.body.appendChild(z);
+}}
 function loadComments(c){{
   if(!c || c.dataset.loaded) return;
   c.dataset.loaded='1';
