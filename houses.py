@@ -79,17 +79,29 @@ def house_detail(cookie, hid, pid="", timeout=25):
     return inner.get("data") or {}
 
 
+def _photo_cookie():
+    c = os.environ.get("HX_PHOTO_COOKIE", "")
+    if c and len(c) > 40:
+        import base64
+        return base64.b64decode(c).decode()
+    f = os.path.join(BASE, "flow_cookie.txt")
+    if os.path.exists(f):
+        return open(f).read().strip()
+    return _cookie()
+
+
 def fetch_photo(cookie, fid, pid="", timeout=25):
     os.makedirs(IMG_DIR, exist_ok=True)
     path = os.path.join(IMG_DIR, fid)
     if os.path.exists(path) and os.path.getsize(path) > 512:
         return True
-    h = dict(_hdr(cookie, pid))
+    ck = _photo_cookie() or cookie
+    h = dict(_hdr(ck, pid))
     h.pop("Content-Type", None)
     try:
-        r = requests.get(Z_BASE + "getPhotoByFileId", headers=h, params={"fileId": fid}, timeout=timeout)
+        r = requests.get(Z_BASE + "getHxPhoto", headers=h, params={"doorTypeFileId": fid}, timeout=timeout)
         ct = (r.headers.get("Content-Type") or "").lower()
-        ok = r.status_code == 200 and "image" in ct and len(r.content) > 512
+        ok = r.status_code == 200 and ("image" in ct or r.content[:4] in (b"\x89PNG", b"\xff\xd8\xff\xe0", b"\xff\xd8\xff\xdb")) and len(r.content) > 512
         if ok:
             open(path, "wb").write(r.content)
             return True
