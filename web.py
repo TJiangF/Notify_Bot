@@ -233,7 +233,7 @@ def api_doortypes(projectId: str = ""):
     if not pid.isdigit():
         return {"ok": False, "msg": "缺少项目ID"}
     try:
-        rec = DT.fetch(pid)
+        rec = DT.ensure(pid)
     except Exception as e:
         return {"ok": False, "msg": f"获取失败：{type(e).__name__}"}
     if not rec:

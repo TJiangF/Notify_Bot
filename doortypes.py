@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import json
 import requests
 
@@ -40,12 +41,24 @@ def load(pid):
         return None
 
 
-def fetch(pid, force=False):
+def project_sig(pid):
+    """项目指纹：项目列表里的在线/总套数/租金区间/户型；用于判断是否需要重拉"""
+    try:
+        import report
+        cur = report.load_current()
+    except Exception:
+        return None
+    for x in cur.get("ssb", []):
+        if str(x.get("id")) == str(pid):
+            return "%s|%s|%s|%s|%s" % (x.get("online"), x.get("total"),
+                                       x.get("rent_low"), x.get("rent_high"), x.get("door_type"))
+    return None
+
+
+def fetch(pid, sig=None):
     pid = str(pid)
-    if not force:
-        c = load(pid)
-        if c is not None:
-            return c
+    if sig is None:
+        sig = project_sig(pid)
     r = requests.post(API, headers=_headers(pid), files={"projectId": (None, pid)}, timeout=30)
     r.raise_for_status()
     j = r.json()
@@ -55,10 +68,21 @@ def fetch(pid, force=False):
     if not isinstance(inner, dict) or "data" not in inner:
         return None
     d = inner["data"]
-    out = {"project": d.get("project") or {}, "doorTypes": d.get("doorTypes") or []}
+    out = {"project": d.get("project") or {}, "doorTypes": d.get("doorTypes") or [],
+           "sig": sig, "fetched_at": int(time.time())}
     os.makedirs(CACHE_DIR, exist_ok=True)
     json.dump(out, open(_path(pid), "w"), ensure_ascii=False)
     return out
+
+
+def ensure(pid):
+    """有缓存且项目指纹未变 → 直接用缓存；否则重拉"""
+    pid = str(pid)
+    c = load(pid)
+    sig = project_sig(pid)
+    if c is not None and (sig is None or c.get("sig") == sig):
+        return c
+    return fetch(pid, sig)
 
 
 def _mime(ext):
