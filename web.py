@@ -99,7 +99,8 @@ def _logged_user(request):
 
 
 def _is_admin(request):
-    return bool(request.session.get("admin"))
+    u = _logged_user(request)
+    return bool(u and u.get("role") == "admin")
 
 
 def _can_map(request):
@@ -415,7 +416,7 @@ def index(request: Request, base: str = Query(None)):
         base_label=sel + " 12:00",
         auto_refresh=AUTO_REFRESH,
         user_name=uname, can_map=can_map, logged_in=bool(u), favorites=favs,
-        is_admin=_is_admin(request), admin_url=(ADMIN_PATH + "/logout"),
+        is_admin=_is_admin(request), admin_url="/admin",
     )
     return HTMLResponse(html)
 
@@ -631,7 +632,7 @@ def _shell(inner, request):
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>管理后台</title>
 <style>{ADMIN_CSS}</style></head><body>
-<div class="top"><h1>房源监控 · 管理后台</h1><a href="{ADMIN_PATH}/logout">退出登录</a></div>
+<div class="top"><h1>房源监控 · 管理后台</h1><a href="/logout">退出登录</a></div>
 <div class="wrap">{inner}</div></body></html>"""
 
 
@@ -730,7 +731,7 @@ def render_dashboard(request, msg=""):
 <section>
 <h2>查询策略</h2>
 <div class="muted" style="margin-bottom:12px">查询与推送是分开的：查询全天 24 小时按间隔进行（夜间也跑，用于会话保活）；推送只在下面「推送策略」的心跳整点触发。</div>
-<form method="post" action="{ADMIN_PATH}/save">
+<form method="post" action="/admin/save">
 <div class="row">
   <div><label class="f">查询间隔（分钟）</label><input name="sched_step" value="{cfg.get('sched_step',20)}"></div>
   <div><label class="f">报表默认基线（几天前）</label><input name="default_base_days" value="{cfg.get('default_base_days',1)}"></div>
@@ -825,36 +826,22 @@ def render_dashboard(request, msg=""):
     return _shell(inner, request)
 
 
-@app.get(ADMIN_PATH, response_class=HTMLResponse)
+@app.get("/admin", response_class=HTMLResponse)
 def admin(request: Request):
-    if not request.session.get("admin"):
-        return HTMLResponse(render_login())
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
     return HTMLResponse(render_dashboard(request))
 
 
-@app.post(ADMIN_PATH + "/login")
-def admin_login(request: Request, pw: str = Form("")):
-    if pw == ADMIN_PW:
-        request.session["admin"] = True
-        return RedirectResponse(ADMIN_PATH, status_code=303)
-    return HTMLResponse(render_login("密码错误"))
-
-
-@app.get(ADMIN_PATH + "/logout")
-def admin_logout(request: Request):
-    request.session.clear()
-    return RedirectResponse(ADMIN_PATH, status_code=303)
-
-
-@app.post(ADMIN_PATH + "/save")
+@app.post("/admin/save")
 def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: str = Form(""),
                ignore: str = Form("{}"), district_id: str = Form(""),
                district_name: str = Form("全市"), heartbeat_hours: str = Form(""),
                quiet_start: str = Form("0"), quiet_end: str = Form("8"), default_base_days: str = Form("1"),
                sched_start: str = Form("8"), sched_end: str = Form("19"), sched_extra_hours: str = Form("20,21,22,0"),
                sched_step: str = Form("10"), push_json: str = Form("")):
-    if not request.session.get("admin"):
-        return RedirectResponse(ADMIN_PATH, status_code=303)
+    if not _is_admin(request):
+        return RedirectResponse("/login", status_code=303)
 
     def ints(s, dflt):
         try:
@@ -1034,12 +1021,15 @@ def render_account(request, u):
         f'<span class="muted">{esc(it["src"])}｜{esc(it["addr"])}</span></div>'
         for it in fav_items) or '<div class="muted">暂无对比记录（在报表房源处点“加入比较”即可，最多 5 条）</div>'
     sc_hint = (f"已设置（…{esc(sc[-4:])}）" if sc else "未设置")
+    admin_link = ('<div style="margin-bottom:12px"><a href="/admin" style="display:inline-block;background:#0f9d58;color:#fff;border-radius:8px;padding:10px 18px;font-size:14px;text-decoration:none">进入管理后台 →</a></div>'
+                  if u.get("role") == "admin" else "")
     inner = f'''
 <div style="margin-bottom:12px"><a href="/" style="display:inline-block;background:#2563eb;color:#fff;border-radius:8px;padding:8px 16px;font-size:14px;text-decoration:none">← 返回报表</a></div>
 <div class="grid">
   <div class="card"><div class="k">我的账号</div><div class="v" style="font-size:15px">{esc(u.get("email"))}</div><div class="s">昵称 {esc(u.get("name"))}</div></div>
   <div class="card"><div class="k">我的对比</div><div class="v">{len(fav_items)}<small> / 5</small></div><div class="s">在报表点“加入比较”即可</div></div>
 </div>
+{admin_link}
 
 <section>
 <h2>推送渠道与时间</h2>

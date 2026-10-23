@@ -388,7 +388,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     if logged_in:
         user_area = f'<div class="sb-user">👤 {esc(user_name)} ｜ <a href="/account">账号</a> ｜ <a href="/logout">退出</a></div>'
     elif is_admin:
-        user_area = f'<div class="sb-user">👑 管理员（后台已登录） ｜ <a href="{esc(admin_url or "/")}">退出后台</a></div>'
+        user_area = f'<div class="sb-user">👑 管理员 ｜ <a href="{esc(admin_url or "/admin")}">管理后台</a> ｜ <a href="/logout">退出</a></div>'
     else:
         user_area = '<div class="sb-user"><a href="/login">登录</a> ｜ <a href="/register">注册</a></div>'
 
