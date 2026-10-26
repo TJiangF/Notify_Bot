@@ -5,6 +5,7 @@ import uuid
 import math
 import html
 import threading
+import shutil
 import re
 import requests
 from datetime import datetime, timezone, timedelta
@@ -55,6 +56,8 @@ def load_comments():
 
 def save_comments(d):
     try:
+        if os.path.exists(COMMENTS_FILE):
+            shutil.copy(COMMENTS_FILE, COMMENTS_FILE + ".bak")
         json.dump(d, open(COMMENTS_FILE, "w"), ensure_ascii=False)
     except Exception:
         pass
@@ -147,7 +150,7 @@ def api_geosuggest(request: Request, q: str = ""):
 
 
 @app.get("/api/nearby")
-def api_nearby(request: Request, q: str = "", n: int = 10, lng: float = 0.0, lat: float = 0.0):
+def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat: float = 0.0):
     u = _logged_user(request)
     if not u and not _is_admin(request):
         return {"ok": False, "need_login": True, "msg": "登录后即可使用智能找房"}
@@ -322,6 +325,12 @@ async def api_comment(request: Request, key: str = Form(...), text: str = Form("
     u = _logged_user(request)
     if not u and not _is_admin(request):
         return {"ok": False, "need_login": True, "msg": "请先登录后再评论"}
+    m = re.match(r"^(ssb|pd):(\d+)$", (key or "").strip())
+    if not m:
+        return {"ok": False, "msg": "无效的房源"}
+    cur = report.load_current()
+    if not any(str(x.get("id")) == m.group(2) for x in cur.get(m.group(1), [])):
+        return {"ok": False, "msg": "房源不存在或已下架"}
     text = (text or "").strip()
     if not text:
         return {"ok": False, "msg": "请输入评论内容"}

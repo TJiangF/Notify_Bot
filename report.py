@@ -566,6 +566,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .maptag.tag-sb{{background:#2f6fed}}
  .maptag.tag-pd{{background:#f59e0b}}
  .mapmeta{{font-size:12px;color:#666;margin-top:2px}}
+ .mapcmt{{margin-top:6px}}
+ .mapcmt-btn{{font-size:12px;padding:2px 10px;border:1px solid #bfd3ff;color:#2563eb;background:#fff;border-radius:12px;cursor:pointer}}
  .muted{{color:#8794a8}}
  .mapgate{{height:300px;border-radius:10px;margin-top:10px;background:#eef1f5;border:1px dashed #c7d0dc;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8794a8;font-size:14px;gap:6px;text-align:center}}
  .mapgate-ico{{font-size:30px}}
@@ -1046,6 +1048,12 @@ document.addEventListener('click', function(e){{
   var b=e.target.closest&&e.target.closest('.dt-load');
   if(b){{ e.stopPropagation(); loadDoortypes(b.closest('.pditem')); }}
 }});
+document.addEventListener('click', function(e){{
+  var b=e.target.closest&&e.target.closest('.mapcmt-btn'); if(!b) return;
+  var c=b.parentNode.querySelector('.cmts'); if(!c) return;
+  if(c.style.display==='none'){{ c.style.display='block'; b.textContent='收起评论'; loadComments(c); }}
+  else {{ c.style.display='none'; b.textContent='查看评论'; }}
+}});
 document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.addEventListener('change', filterPd); }});
 ['pd_fmin','pd_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterPd); }});
 filterPd();
@@ -1093,8 +1101,8 @@ function doFind(){{
   var msg=document.getElementById('map_msg');
   if(!mapSel && !q){{ msg.textContent='请输入地址'; return; }}
   var box=document.getElementById('map_sug'); if(box) box.style.display='none';
-  var url = mapSel ? ('/api/nearby?lng='+mapSel.lng+'&lat='+mapSel.lat+'&n=10')
-                   : ('/api/nearby?q='+encodeURIComponent(q)+'&n=10');
+  var url = mapSel ? ('/api/nearby?lng='+mapSel.lng+'&lat='+mapSel.lat+'&n=15')
+                   : ('/api/nearby?q='+encodeURIComponent(q)+'&n=15');
   msg.textContent='查询中…';
   fetch(url).then(function(r){{return r.json();}}).then(function(res){{
     if(!res||!res.ok){{ msg.textContent=(res&&res.msg)||'查询失败'; return; }}
@@ -1125,7 +1133,8 @@ function renderMapList(hs){{
   hs.forEach(function(x,i){{
     var d=(x.dist<1000)?(x.dist+' 米'):((x.dist/1000).toFixed(2)+' 公里');
     var cls=(x.src==='随申办')?'tag-sb':'tag-pd';
-    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+'</div></div></div>';
+    var key=(x.src==='随申办'?'ssb:':'pd:')+x.id;
+    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div style="flex:1;min-width:0"><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+'</div><div class="mapcmt"><button type="button" class="mapcmt-btn">查看评论</button><div class="cmts" data-key="'+key+'" style="display:none"></div></div></div></div>';
   }});
   el.innerHTML=h;
 }}
