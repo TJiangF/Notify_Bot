@@ -703,8 +703,7 @@ def render_dashboard(request, msg=""):
         for r in (push.get("pd_keywords") or []) if isinstance(r, dict)
     ], ensure_ascii=False)
     p_pdupdown = "checked" if push.get("pd_updown") else ""
-    push_js = (f'<script>var KW_INIT = {kw_init}; var PDKW_INIT = {pd_kw_init};</script>'
-               + ADMIN_PUSH_JS + ADMIN_EXTRA_JS)
+    push_js = ADMIN_EXTRA_JS
 
     users_all = U.load_users()
     td = _now().strftime("%Y-%m-%d")
@@ -782,67 +781,11 @@ def render_dashboard(request, msg=""):
 </section>
 
 <section>
-<h2 style="margin-top:22px">推送策略</h2>
-<div class="muted" style="margin-bottom:12px">推送按「心跳整点」触发：到点对比上次心跳，汇总下面「推送内容」里勾选的变动发送；异常（Cookie 失效、限流、恢复）为特殊情况即时推送。</div>
-<div class="row">
-  <div><label class="f">心跳整点（逗号，24 时制）</label><input name="heartbeat_hours" value="{hb}"></div>
-  <div><label class="f">夜间静默起（时，不推送）</label><input name="quiet_start" value="{cfg.get('quiet_start',0)}"></div>
-  <div><label class="f">夜间静默止（时）</label><input name="quiet_end" value="{cfg.get('quiet_end',8)}"></div>
-</div>
-<div class="muted">特殊情况（Cookie 失效 / 查询限流 / 恢复）始终即时推送，不受内容勾选影响。</div>
-
-<h2 style="margin-top:22px">推送内容</h2>
-<div class="row">
-  <div><label class="f">企业微信 Webhook</label><input name="wecom_webhook" value="{cfg.get('wecom_webhook','')}"></div>
-  <div><label class="f">Server酱 SendKey</label><input name="serverchan_key" value="{cfg.get('serverchan_key','')}"></div>
-</div>
-
+<h2 style="margin-top:22px">推送设置</h2>
 <div class="pushbox">
-  <label class="chk"><input type="checkbox" id="p_total" {p_total}> 随申办总项目数量增减</label>
+  <div style="font-weight:600;margin-bottom:6px">推送已改为「按用户配置」</div>
+  <div class="muted">全局推送已下线。每位用户（含管理员）请到 <a href="/account">我的账号</a> 配置自己的 Server酱、心跳整点与推送内容（含「供应预告」）。异常通知（Cookie 失效 / 限流 / 恢复）会发到管理员账号配置的 Server酱。</div>
 </div>
-
-<div class="pushbox">
-  <label class="chk"><input type="checkbox" id="p_notice" {p_notice}> 随申办供应预告变动（新增/移除，含地址/供应日/租金）</label>
-</div>
-
-<div class="pushbox">
-  <label class="chk"><input type="checkbox" id="p_dist" {p_dist}> 随申办特定行政区项目数量增减</label>
-  <div class="muted" style="margin:6px 0 4px">勾选要关注的行政区（可多选）：</div>
-  <div class="distlist">{dist_checks or '<span class="muted">（暂无行政区数据）</span>'}</div>
-</div>
-
-<div class="pushbox">
-  <div style="font-weight:600;margin-bottom:6px">随申办特定词条房源变动（最多 10 个）</div>
-  <div class="muted" style="margin-bottom:8px">每个词条可分别勾选「新增 / 上下线 / 数量变动」；下方逐条列出命中项目，<b>勾选项目前的方框 = 忽略该房源（不推送）</b>，不勾选 = 正常推送；命中超过 10 个说明词条太宽泛，建议修改。</div>
-  <table class="kwtbl">
-    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
-    <tbody id="kwrows"></tbody>
-  </table>
-  <button type="button" id="kwadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
-</div>
-
-<div class="pushbox">
-  <label class="chk"><input type="checkbox" id="p_pdupdown" {p_pdupdown}> 明珠在线项目上下线</label>
-  <div style="font-weight:600;margin:14px 0 6px">明珠在线特定词条房源变动（最多 10 个）</div>
-  <div class="muted" style="margin-bottom:8px">规则同随申办；逐条列出的命中项目，<b>勾选 = 忽略（不推送）</b>。</div>
-  <table class="kwtbl">
-    <thead><tr><th style="text-align:left">词条</th><th>新增</th><th>上下线</th><th>数量变动</th><th>整词忽略</th><th>当前命中</th><th></th></tr></thead>
-    <tbody id="pdrows"></tbody>
-  </table>
-  <button type="button" id="pdadd" class="ghost" style="margin-top:8px">+ 添加词条</button>
-</div>
-
-<div class="pushbox">
-  <div style="font-weight:600;margin-bottom:6px">推送测试</div>
-  <div class="muted" style="margin-bottom:8px">按当前<b>已保存</b>的设置立即发送一条心跳推送（建议先保存再测试）。</div>
-  <button type="button" id="testpush" class="ghost">发送测试推送</button>
-  <span id="testpush_msg" class="muted" style="margin-left:10px"></span>
-</div>
-
-<input type="hidden" name="push_json" id="push_json">
-
-<details style="margin-top:10px"><summary class="muted">高级：忽略名单（项目ID→名称，JSON）</summary>
-<textarea name="ignore" id="ignore_ta" rows="4">{ignore}</textarea></details>
 {(f'<div class="ok">{msg}</div>') if msg else ''}
 <p><button>保存配置</button> <span class="muted">保存后监控下一轮生效（≤按策略点位）</span></p>
 </form>
@@ -875,11 +818,11 @@ def admin_save(request: Request, wecom_webhook: str = Form(""), serverchan_key: 
         except Exception:
             return dflt
 
-    try:
-        ig = json.loads(ignore) if ignore.strip() else {}
-    except Exception:
-        ig = {}
     old = cfgmod.load()
+    try:
+        ig = json.loads(ignore) if ignore.strip() else (old.get("ignore", {}) or {})
+    except Exception:
+        ig = old.get("ignore", {}) or {}
     if push_json.strip():
         try:
             pj = json.loads(push_json)

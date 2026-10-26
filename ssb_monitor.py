@@ -550,7 +550,7 @@ def _notice_map(notice):
 
 
 def project_snapshot(cur_all, pd_items=None, notice=None, push_cfg=None):
-    cfg = push_cfg or PUSH
+    cfg = PUSH if push_cfg is None else push_cfg
     dists = {}
     for it in cur_all:
         d = it.get("districtName") or it.get("district") or "未知"
@@ -615,7 +615,7 @@ def _rule_lines(rule, now, old, cap=8):
 
 def build_push_digest(cur_all, pd_items, notice, baseline, push_cfg=None):
     """生成与上次心跳基线的对比摘要；返回 (lines, 本快照)"""
-    cfg = push_cfg or PUSH
+    cfg = PUSH if push_cfg is None else push_cfg
     cur = project_snapshot(cur_all, pd_items, notice, cfg)
     baseline = baseline or {}
     lines = []
@@ -939,6 +939,17 @@ def push(text, heartbeat=False):
         send_serverchan(text)
         sent = True
     if not sent:
+        try:
+            import users as _U
+            for _email, _u in _U.load_users().items():
+                if _u.get("role") == "admin":
+                    _k = (_u.get("push") or {}).get("serverchan") or ""
+                    if _k:
+                        send_serverchan_key(_k, text)
+                        sent = True
+        except Exception:
+            pass
+    if not sent:
         print("[no channel] " + text)
 
 
@@ -1257,21 +1268,6 @@ def run_once(report=False):
         print("首次运行，建立基线")
 
     stamp = bj.strftime("%Y-%m-%d %H")
-    if bj.hour in HEARTBEAT_HOURS and state.get(HEARTBEAT_KEY) != stamp and cur_all is not None:
-        baseline = state.get(HB_BASELINE_KEY)
-        digest, cur_snap = build_push_digest(cur_all, pd, notice, baseline)
-        lines = ["【房源监控 · 定时心跳】", f"时间：{bj.strftime('%Y-%m-%d %H:%M')}",
-                 f"随申办项目 {cur_snap['total']} ｜ 明珠在线 {len(pd) if pd else 0} ｜ 供应预告 {len(notice) if notice else 0}"]
-        if digest:
-            lines.append("\n━━ 变动 ━━")
-            lines += digest
-        else:
-            lines.append("（暂无可推送的变动）")
-        push("\n".join(lines), heartbeat=True)
-        state[HB_BASELINE_KEY] = cur_snap
-        state[HEARTBEAT_KEY] = stamp
-        print("整点心跳已推送:", stamp)
-
     if state.get("__user_push_hour__") != stamp:
         state["__user_push_hour__"] = stamp
         if cur_all is not None:
