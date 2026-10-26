@@ -717,7 +717,7 @@ def render_dashboard(request, msg=""):
             f'<td>{int(uu.get("visits_total") or 0)}</td><td>{int(vs.get(td, 0))}</td>'
             f'<td>{int(uu.get("login_count") or 0)}</td><td>{esc((uu.get("last_seen") or "")[:16])}</td>'
             f'<td>{len(uu.get("favorites") or [])}</td>'
-            f'<td>{"是" if pu.get("serverchan") else "否"}</td>'
+            f'<td>{"/".join([x for x,ok in (("Server酱", pu.get("serverchan")), ("企业微信", pu.get("wecom"))) if ok]) or "否"}</td>'
             f'<td>{",".join(str(h) for h in (pu.get("hours") or [])) or "—"}</td></tr>')
     users_table = "".join(urows) or '<tr><td colspan="11" class="muted">暂无用户</td></tr>'
     today_active = sum(1 for uu in users_all.values() if int((uu.get("visits_days") or {}).get(td, 0)) > 0)
@@ -734,7 +734,7 @@ def render_dashboard(request, msg=""):
 <section>
 <h2>用户管理（{len(users_all)} 个账号，今日活跃 {today_active}）</h2>
 <div style="overflow-x:auto">
-<table><thead><tr><th>邮箱</th><th>昵称</th><th>角色</th><th>注册</th><th>访问(总)</th><th>访问(今日)</th><th>登录次数</th><th>最后活跃</th><th>对比数</th><th>Server酱</th><th>心跳整点</th></tr></thead><tbody>{users_table}</tbody></table>
+<table><thead><tr><th>邮箱</th><th>昵称</th><th>角色</th><th>注册</th><th>访问(总)</th><th>访问(今日)</th><th>登录次数</th><th>最后活跃</th><th>对比数</th><th>推送渠道</th><th>心跳整点</th></tr></thead><tbody>{users_table}</tbody></table>
 </div>
 </section>
 
@@ -938,6 +938,30 @@ def _send_sc(key, text):
         return False
 
 
+def _extract_wecom(s):
+    s = (s or "").strip()
+    if not s:
+        return ""
+    m = re.search(r"key=([A-Za-z0-9-]+)", s)
+    if m:
+        return "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=" + m.group(1)
+    if s.startswith("http"):
+        return s
+    return "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=" + s
+
+
+def _send_wecom(target, text):
+    if not target:
+        return False
+    b = text.encode("utf-8")
+    if len(b) > 1900:
+        text = b[:1900].decode("utf-8", "ignore")
+    try:
+        return requests.post(target, json={"msgtype": "text", "text": {"content": text}}, timeout=15).ok
+    except Exception:
+        return False
+
+
 def _fav_items(keys):
     cur = report.load_current()
     idx = {}
@@ -963,6 +987,7 @@ def _fav_items(keys):
 def render_account(request, u):
     push = u.get("push") or {}
     sc = push.get("serverchan", "")
+    wc = push.get("wecom", "")
     sel_hours = set(int(h) for h in (push.get("hours") or []))
     hour_checks = "".join(
         f'<label class="chk" style="margin:2px 12px 2px 0"><input type="checkbox" name="hours" value="{h}"'
@@ -990,6 +1015,7 @@ def render_account(request, u):
         f'<span class="muted">{esc(it["src"])}｜{esc(it["addr"])}</span></div>'
         for it in fav_items) or '<div class="muted">暂无对比记录（在报表房源处点“加入比较”即可，最多 5 条）</div>'
     sc_hint = (f"已设置（…{esc(sc[-4:])}）" if sc else "未设置")
+    wc_hint = (f"已设置（…{esc(wc[-8:])}）" if wc else "未设置")
     admin_link = ('<div style="margin-bottom:12px"><a href="/admin" style="display:inline-block;background:#0f9d58;color:#fff;border-radius:8px;padding:10px 18px;font-size:14px;text-decoration:none">进入管理后台 →</a></div>'
                   if u.get("role") == "admin" else "")
     inner = f'''
@@ -1006,6 +1032,9 @@ def render_account(request, u):
   <label class="f">Server酱 SendKey（可粘贴完整链接，当前：{sc_hint}）</label>
   <input name="serverchan" placeholder="https://sctapi.ftqq.com/SCTxxxxx.send 或直接填 SendKey">
   <div class="muted" style="margin-top:6px">还没有 SendKey？前往官方获取：<a href="https://sct.ftqq.com/" target="_blank" rel="noopener">https://sct.ftqq.com/</a></div>
+  <label class="f" style="margin-top:14px">企业微信机器人 Webhook（当前：{wc_hint}）</label>
+  <input name="wecom" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx 或直接填 key">
+  <div class="muted" style="margin-top:6px">企业微信群 → 群设置 → 添加群机器人 → 复制 Webhook 地址（可与 Server酱 同时使用）</div>
   <label class="f" style="margin-top:14px">心跳推送小时（最多选 3 个；推荐白天 8:00–22:00）</label>
   <div style="max-height:150px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
   <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上手动发一条测试。每日心跳推送最多 3 次；心跳以及下面的定制化推送合计最多 6 次。</div>
@@ -1132,7 +1161,7 @@ def account_page(request: Request):
 
 
 @app.post("/account")
-def account_save(request: Request, serverchan: str = Form(""), hours: list[int] = Form(default=[]),
+def account_save(request: Request, serverchan: str = Form(""), wecom: str = Form(""), hours: list[int] = Form(default=[]),
                  push_json: str = Form(""), ignore: str = Form("{}")):
     u = _logged_user(request)
     if not u:
@@ -1143,8 +1172,10 @@ def account_save(request: Request, serverchan: str = Form(""), hours: list[int] 
         hs = []
     old = u.get("push") or {}
     key = _extract_sc(serverchan) or old.get("serverchan", "")
+    wkey = _extract_wecom(wecom) or old.get("wecom", "")
     push = dict(old)
     push["serverchan"] = key
+    push["wecom"] = wkey
     push["hours"] = hs
     if push_json.strip():
         try:
@@ -1209,12 +1240,19 @@ def api_user_test_push(request: Request):
     u = _logged_user(request)
     if not u:
         return {"ok": False, "msg": "请先登录"}
-    key = (u.get("push") or {}).get("serverchan", "")
-    if not key:
-        return {"ok": False, "msg": "请先填写 Server酱 SendKey 并保存"}
+    pc = u.get("push") or {}
+    key = pc.get("serverchan", "")
+    wc = pc.get("wecom", "")
+    if not key and not wc:
+        return {"ok": False, "msg": "请先填写 Server酱 或 企业微信 Webhook 并保存"}
     ok, n = U.push_take(u["email"], 6)
     if not ok:
         return {"ok": False, "msg": "今日推送次数已达 6 次上限"}
-    text = "【房源监控·测试推送】\n时间：" + U.now_bj().strftime("%Y-%m-%d %H:%M") + "\n收到此消息即表示你的 Server酱 配置成功。"
-    sent = _send_sc(key, text)
-    return {"ok": sent, "msg": "已发送，请查收" if sent else "发送失败，请检查 SendKey"}
+    text = ("【房源监控·测试推送】\n时间：" + U.now_bj().strftime("%Y-%m-%d %H:%M")
+            + "\n收到此消息即表示你的推送配置成功。")
+    sent = False
+    if key:
+        sent = _send_sc(key, text) or sent
+    if wc:
+        sent = _send_wecom(wc, text) or sent
+    return {"ok": sent, "msg": "已发送，请查收" if sent else "发送失败，请检查配置"}

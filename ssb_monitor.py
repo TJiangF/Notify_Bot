@@ -880,8 +880,19 @@ def send_serverchan_key(key, text):
         return False
 
 
+def send_wecom_key(target, text):
+    target = (target or "").strip()
+    if not target:
+        return False
+    text = _limit_bytes(text, 1800)
+    try:
+        return requests.post(target, json={"msgtype": "text", "text": {"content": text}}, timeout=15).ok
+    except Exception:
+        return False
+
+
 def push_users(cur_all, pd_items, notice):
-    """按每个用户选定的整点/内容，用自己的 Server酱 推送（每天≤5次）"""
+    """按每个用户选定的整点/内容，用其自己的 Server酱/企业微信 推送（每天≤6次）"""
     global EXTRA_IGNORE
     try:
         import users as _U
@@ -896,8 +907,9 @@ def push_users(cur_all, pd_items, notice):
     for email, u in list(users_map.items()):
         pc = u.get("push") or {}
         key = (pc.get("serverchan") or "").strip()
+        wc = (pc.get("wecom") or "").strip()
         hours = pc.get("hours") or []
-        if not key or bj.hour not in hours:
+        if (not key and not wc) or bj.hour not in hours:
             continue
         if u.get("last_push_hour") == stamp:
             continue
@@ -921,7 +933,13 @@ def push_users(cur_all, pd_items, notice):
         if not ok:
             print(f"用户推送已达上限: {email}")
             continue
-        if send_serverchan_key(key, "【房源监控 · 定时推送】\n" + body):
+        text = "【房源监控 · 定时推送】\n" + body
+        sent = False
+        if key:
+            sent = send_serverchan_key(key, text) or sent
+        if wc:
+            sent = send_wecom_key(wc, text) or sent
+        if sent:
             _U.update_user(email, last_push_hour=stamp, push_baseline=snap)
             print(f"用户推送已发送: {email} ({n}/6)")
 
