@@ -728,7 +728,7 @@ def render_dashboard(request, msg=""):
   <div class="card"><div class="k">今日独立 IP</div><div class="v">{uniq}</div></div>
   <div class="card"><div class="k">随申办 今日调用</div><div class="v">{sb_t.get('req',0)}<small> 请求</small></div><div class="s">{sb_t.get('rec',0)} 条记录</div></div>
   <div class="card"><div class="k">明珠在线 今日调用</div><div class="v">{pd_t.get('req',0)}<small> 请求</small></div><div class="s">{pd_t.get('rec',0)} 条记录</div></div>
-  <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">08:00–19:00 每 {cfg.get('sched_step',10)} 分钟 + 夜间整点</div></div>
+  <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">全天每 {cfg.get('sched_step',5)} 分钟（含夜间保活）</div></div>
 </div>
 
 <section>
@@ -1035,7 +1035,7 @@ def render_account(request, u):
   <label class="f" style="margin-top:14px">企业微信机器人 Webhook（当前：{wc_hint}）</label>
   <input name="wecom" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx 或直接填 key">
   <div class="muted" style="margin-top:6px">企业微信群 → 群设置 → 添加群机器人 → 复制 Webhook 地址（可与 Server酱 同时使用）</div>
-  <label class="f" style="margin-top:14px">心跳推送小时（最多选 3 个；推荐白天 8:00–22:00）</label>
+  <label class="f" style="margin-top:14px">心跳推送小时（{"管理员不限" if u.get("role")=="admin" else "最多选 3 个"}；推荐白天 8:00–22:00）</label>
   <div style="max-height:150px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
   <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上手动发一条测试。每日心跳推送最多 3 次；心跳以及下面的定制化推送合计最多 6 次。</div>
 
@@ -1167,7 +1167,9 @@ def account_save(request: Request, serverchan: str = Form(""), wecom: str = Form
     if not u:
         return RedirectResponse("/login", status_code=303)
     try:
-        hs = sorted({int(h) for h in (hours or []) if 0 <= int(h) <= 23})[:3]
+        hs = sorted({int(h) for h in (hours or []) if 0 <= int(h) <= 23})
+        if u.get("role") != "admin":
+            hs = hs[:3]
     except Exception:
         hs = []
     old = u.get("push") or {}

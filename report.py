@@ -599,7 +599,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 </div></div>
 <div class="wrap">
 <h1 id="sec-top">上海房源变化报表</h1>
-<div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每 20 分钟更新，页面定时自动刷新</div></div>
+<div class="sub">{selector if opts else ''}<div>{sent}　｜　数据每小时更新，页面定时自动刷新</div></div>
 {stale_banner}
 <div class="cards">
  <div class="card"><div class="n">{c_ssb}</div><div class="l">随申办 项目数</div></div>

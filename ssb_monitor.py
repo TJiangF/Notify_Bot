@@ -618,6 +618,8 @@ def build_push_digest(cur_all, pd_items, notice, baseline, push_cfg=None):
     cfg = PUSH if push_cfg is None else push_cfg
     cur = project_snapshot(cur_all, pd_items, notice, cfg)
     baseline = baseline or {}
+    has_kw = "keywords" in baseline
+    has_pd = "pd" in baseline
     lines = []
     if cfg.get("total_change"):
         old = baseline.get("total")
@@ -655,7 +657,7 @@ def build_push_digest(cur_all, pd_items, notice, baseline, push_cfg=None):
             if len(gone_ids) > 8:
                 lines.append(f"  …等共 {len(gone_ids)} 个下线")
 
-    for rule in cfg.get("keywords", []):
+    for rule in (cfg.get("keywords", []) if has_kw else []):
         if rule.get("ignore"):
             continue
         w = (rule.get("word") or "").strip()
@@ -692,7 +694,7 @@ def build_push_digest(cur_all, pd_items, notice, baseline, push_cfg=None):
                     lines.append(f"  …等共 {len(gone_ids)} 条移除")
 
     pd_lines = []
-    if cfg.get("pd_updown"):
+    if cfg.get("pd_updown") and has_pd:
         oldp = _drop_ignored((baseline.get("pd") or {}).get("projects") or {})
         nowp = cur["pd"]["projects"]
         new_ids = [p for p in nowp if p not in oldp]
@@ -715,7 +717,7 @@ def build_push_digest(cur_all, pd_items, notice, baseline, push_cfg=None):
             if len(gone_ids) > 8:
                 pd_lines.append(f"  …等共 {len(gone_ids)} 个下架")
 
-    for rule in cfg.get("pd_keywords", []):
+    for rule in (cfg.get("pd_keywords", []) if has_pd else []):
         if rule.get("ignore"):
             continue
         w = (rule.get("word") or "").strip()
@@ -892,14 +894,15 @@ def send_wecom_key(target, text):
 
 
 def push_users(cur_all, pd_items, notice):
-    """按每个用户选定的整点/内容，用其自己的 Server酱/企业微信 推送（每天≤6次）"""
+    """抓取每5分钟；普通用户只在20分钟整点触发推送(≤6/天)，admin每5分钟可推且不限次。"""
     global EXTRA_IGNORE
     try:
         import users as _U
     except Exception:
         return
     bj = now_bj()
-    stamp = bj.strftime("%Y-%m-%d %H")
+    minute_stamp = bj.strftime("%Y-%m-%d %H:%M")
+    tick20 = (bj.minute % 20 == 0)
     try:
         users_map = _U.load_users()
     except Exception:
@@ -909,11 +912,17 @@ def push_users(cur_all, pd_items, notice):
         key = (pc.get("serverchan") or "").strip()
         wc = (pc.get("wecom") or "").strip()
         hours = pc.get("hours") or []
-        if (not key and not wc) or bj.hour not in hours:
+        if not key and not wc:
             continue
-        if u.get("last_push_hour") == stamp:
+        is_admin = (u.get("role") == "admin")
+        if not is_admin and not tick20:
             continue
-        cfg = pc.get("content") or {}
+        if u.get("last_push_minute") == minute_stamp:
+            continue
+        cfg = pc.get("content")
+        if not cfg and is_admin:
+            cfg = PUSH
+        cfg = cfg or {}
         EXTRA_IGNORE = set(str(k) for k in (cfg.get("ignore") or {}).keys())
         baseline = u.get("push_baseline")
         try:
@@ -923,16 +932,22 @@ def push_users(cur_all, pd_items, notice):
             EXTRA_IGNORE = set()
             continue
         EXTRA_IGNORE = set()
+        heartbeat = (bj.minute == 0 and bj.hour in hours)
+        if not digest and not heartbeat:
+            continue
         body = (f"时间：{bj.strftime('%Y-%m-%d %H:%M')}\n"
                 f"随申办项目 {len(cur_all)} ｜ 明珠在线 {len(pd_items or [])} ｜ 供应预告 {len(notice or [])}")
         if digest:
             body += "\n\n━━ 变动 ━━\n" + "\n".join(digest)
         else:
             body += "\n（按你的设置本轮暂无可推送的变动）"
-        ok, n = _U.push_take(email, 6)
-        if not ok:
-            print(f"用户推送已达上限: {email}")
-            continue
+        if not is_admin:
+            ok, n = _U.push_take(email, 6)
+            if not ok:
+                print(f"用户推送已达上限: {email}")
+                continue
+        else:
+            n = 0
         text = "【房源监控 · 定时推送】\n" + body
         sent = False
         if key:
@@ -940,8 +955,8 @@ def push_users(cur_all, pd_items, notice):
         if wc:
             sent = send_wecom_key(wc, text) or sent
         if sent:
-            _U.update_user(email, last_push_hour=stamp, push_baseline=snap)
-            print(f"用户推送已发送: {email} ({n}/6)")
+            _U.update_user(email, last_push_minute=minute_stamp, push_baseline=snap)
+            print(f"用户推送已发送: {email}" + ("" if is_admin else f" ({n}/6)"))
 
 
 def push(text, heartbeat=False):
@@ -1286,10 +1301,8 @@ def run_once(report=False):
         print("首次运行，建立基线")
 
     stamp = bj.strftime("%Y-%m-%d %H")
-    if state.get("__user_push_hour__") != stamp:
-        state["__user_push_hour__"] = stamp
-        if cur_all is not None:
-            push_users(cur_all, pd, notice)
+    if cur_all is not None:
+        push_users(cur_all, pd, notice)
 
     state[SCOPE_KEY] = scope
     save_state(state)
