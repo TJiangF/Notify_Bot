@@ -935,6 +935,14 @@ def push_users(cur_all, pd_items, notice):
         cfg = cfg or {}
         EXTRA_IGNORE = set(str(k) for k in (cfg.get("ignore") or {}).keys())
         baseline = u.get("push_baseline")
+        if not isinstance(baseline, dict) or "total" not in baseline:
+            try:
+                _, snap0 = build_push_digest(cur_all, pd_items, notice, None, cfg)
+                _U.update_user(email, push_baseline=snap0)
+            except Exception:
+                pass
+            EXTRA_IGNORE = set()
+            continue
         try:
             digest, snap = build_push_digest(cur_all, pd_items, notice, baseline, cfg)
         except Exception as e:
