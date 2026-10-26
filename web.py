@@ -382,9 +382,12 @@ def read_usage(path):
 
 
 def schedule_times(cfg):
-    step = int(cfg.get("sched_step", 20)) or 20
+    ds = int(cfg.get("day_start", 8)); de = int(cfg.get("day_end", 20))
+    dstep = int(cfg.get("day_step", 5)) or 5
+    nstep = int(cfg.get("night_step", 20)) or 20
     out = []
     for h in range(24):
+        step = dstep if ds <= h < de else nstep
         m = 0
         while m < 60:
             out.append(f"{h:02d}:{m:02d}")
@@ -728,7 +731,7 @@ def render_dashboard(request, msg=""):
   <div class="card"><div class="k">今日独立 IP</div><div class="v">{uniq}</div></div>
   <div class="card"><div class="k">随申办 今日调用</div><div class="v">{sb_t.get('req',0)}<small> 请求</small></div><div class="s">{sb_t.get('rec',0)} 条记录</div></div>
   <div class="card"><div class="k">明珠在线 今日调用</div><div class="v">{pd_t.get('req',0)}<small> 请求</small></div><div class="s">{pd_t.get('rec',0)} 条记录</div></div>
-  <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">全天每 {cfg.get('sched_step',5)} 分钟（含夜间保活）</div></div>
+  <div class="card"><div class="k">今日查询点位</div><div class="v">{len(times)}</div><div class="s">白天 {cfg.get('day_step',5)} 分钟 / 夜间 {cfg.get('night_step',20)} 分钟（账户页可调）</div></div>
 </div>
 
 <section>
@@ -755,7 +758,7 @@ def render_dashboard(request, msg=""):
 
 <section>
 <h2>查询策略</h2>
-<div class="muted" style="margin-bottom:12px">查询与推送是分开的：查询全天 24 小时按间隔进行（夜间也跑，用于会话保活）；推送只在下面「推送策略」的心跳整点触发。</div>
+<div class="muted" style="margin-bottom:12px">查询策略按管理员账户配置执行：白天（{cfg.get('day_start',8)}:00–{cfg.get('day_end',20)}:00）每 {cfg.get('day_step',5)} 分钟、夜间每 {cfg.get('night_step',20)} 分钟全量抓取；备号每 {cfg.get('backup_ping_min',20)} 分钟 ping 保活；主号失效切备号，{cfg.get('switch_back_hour',0)}:00 尝试切回。可在【我的账号】调整。</div>
 <form method="post" action="/admin/save">
 <div class="row">
   <div><label class="f">查询间隔（分钟）</label><input name="sched_step" value="{cfg.get('sched_step',20)}"></div>
@@ -1016,6 +1019,21 @@ def render_account(request, u):
         for it in fav_items) or '<div class="muted">暂无对比记录（在报表房源处点“加入比较”即可，最多 5 条）</div>'
     sc_hint = (f"已设置（…{esc(sc[-4:])}）" if sc else "未设置")
     wc_hint = (f"已设置（…{esc(wc[-8:])}）" if wc else "未设置")
+    qs = ""
+    if u.get("role") == "admin":
+        _qc = cfgmod.load()
+        qs = f'''<h2 style="margin-top:22px">查询策略（管理员）</h2>
+<div class="muted" style="margin-bottom:8px">主号白天（{_qc.get("day_start",8)}:00–{_qc.get("day_end",20)}:00）每 {_qc.get("day_step",5)} 分钟全量抓取；夜间每 {_qc.get("night_step",20)} 分钟全量抓取；备号每 {_qc.get("backup_ping_min",20)} 分钟 ping 一次保活；主号失效自动切备号，到 {_qc.get("switch_back_hour",0)}:00 尝试切回主号。有变动时仍会推送/心跳/生成报表。</div>
+<div class="row">
+  <div><label class="f">白天开始（时）</label><input name="day_start" value="{_qc.get("day_start",8)}"></div>
+  <div><label class="f">白天结束（时，不含）</label><input name="day_end" value="{_qc.get("day_end",20)}"></div>
+  <div><label class="f">白天间隔（分钟）</label><input name="day_step" value="{_qc.get("day_step",5)}"></div>
+</div>
+<div class="row">
+  <div><label class="f">夜间间隔（分钟）</label><input name="night_step" value="{_qc.get("night_step",20)}"></div>
+  <div><label class="f">备号保活间隔（分钟）</label><input name="backup_ping_min" value="{_qc.get("backup_ping_min",20)}"></div>
+  <div><label class="f">切回主号时间（时）</label><input name="switch_back_hour" value="{_qc.get("switch_back_hour",0)}"></div>
+</div>'''
     admin_link = ('<div style="margin-bottom:12px"><a href="/admin" style="display:inline-block;background:#0f9d58;color:#fff;border-radius:8px;padding:10px 18px;font-size:14px;text-decoration:none">进入管理后台 →</a></div>'
                   if u.get("role") == "admin" else "")
     inner = f'''
@@ -1038,6 +1056,7 @@ def render_account(request, u):
   <label class="f" style="margin-top:14px">心跳推送小时（{"管理员不限" if u.get("role")=="admin" else "最多选 3 个"}；推荐白天 8:00–22:00）</label>
   <div style="max-height:150px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px">{hour_checks}</div>
   <div class="muted" style="margin-top:8px">"心跳推送"=按所选整点自动推送；"立即推送一次"=马上手动发一条测试。每日心跳推送最多 3 次；心跳以及下面的定制化推送合计最多 6 次。</div>
+{qs}
 
   <h2 style="margin-top:22px">推送内容</h2>
 
@@ -1162,7 +1181,9 @@ def account_page(request: Request):
 
 @app.post("/account")
 def account_save(request: Request, serverchan: str = Form(""), wecom: str = Form(""), hours: list[int] = Form(default=[]),
-                 push_json: str = Form(""), ignore: str = Form("{}")):
+                 push_json: str = Form(""), ignore: str = Form("{}"),
+                 day_start: str = Form(""), day_end: str = Form(""), day_step: str = Form(""),
+                 night_step: str = Form(""), backup_ping_min: str = Form(""), switch_back_hour: str = Form("")):
     u = _logged_user(request)
     if not u:
         return RedirectResponse("/login", status_code=303)
@@ -1214,6 +1235,18 @@ def account_save(request: Request, serverchan: str = Form(""), wecom: str = Form
                 ig = {}
             push["content"]["ignore"] = {str(k): str(v) for k, v in ig.items()}
     U.update_user(u["email"], push=push, push_baseline=None)
+    if u.get("role") == "admin" and day_start.strip():
+        try:
+            c = cfgmod.load()
+            c["day_start"] = int(day_start or 8)
+            c["day_end"] = int(day_end or 20)
+            c["day_step"] = max(1, int(day_step or 5))
+            c["night_step"] = max(1, int(night_step or 20))
+            c["backup_ping_min"] = max(1, int(backup_ping_min or 20))
+            c["switch_back_hour"] = int(switch_back_hour or 0)
+            cfgmod.save(c)
+        except Exception:
+            pass
     return RedirectResponse("/account", status_code=303)
 
 

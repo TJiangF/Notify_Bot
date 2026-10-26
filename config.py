@@ -18,6 +18,12 @@ DEFAULTS = {
     "sched_start": 8,
     "sched_end": 19,
     "sched_step": 5,
+    "day_start": 8,
+    "day_end": 20,
+    "day_step": 5,
+    "night_step": 20,
+    "backup_ping_min": 20,
+    "switch_back_hour": 0,
     "sched_extra_hours": [20, 21, 22, 0],
     "push": {
         "total_change": True,

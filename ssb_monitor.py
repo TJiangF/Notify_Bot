@@ -69,6 +69,7 @@ QUIET_START, QUIET_END = 0, 8
 SCHED_START, SCHED_END, SCHED_EXTRA = 8, 19, {20, 21, 22, 0}
 SCHED_STEP = 20
 REPORT_START, REPORT_END = 8, 23
+DAY_START, DAY_END, DAY_STEP, NIGHT_STEP, BACKUP_PING_MIN, SWITCH_BACK_HOUR = 8, 20, 5, 20, 20, 0
 
 try:
     sys.path.insert(0, BASE_DIR)
@@ -96,6 +97,12 @@ try:
     SCHED_END = int(_c.get("sched_end", 19))
     SCHED_STEP = int(_c.get("sched_step", 20))
     SCHED_EXTRA = set(int(h) for h in _c.get("sched_extra_hours", [20, 21, 22, 0]))
+    DAY_START = int(_c.get("day_start", 8))
+    DAY_END = int(_c.get("day_end", 20))
+    DAY_STEP = int(_c.get("day_step", 5))
+    NIGHT_STEP = int(_c.get("night_step", 20))
+    BACKUP_PING_MIN = int(_c.get("backup_ping_min", 20))
+    SWITCH_BACK_HOUR = int(_c.get("switch_back_hour", 0))
     REPORT_START = int(_c.get("report_start", 8))
     REPORT_END = int(_c.get("report_end", 23))
 except Exception:
@@ -189,8 +196,9 @@ def fetch_all():
         ck = SB_COOKIES[idx]
         try:
             out = _fetch_all_cookie(ck)
-            if ck != ACTIVE_COOKIE:
-                print("随申办：已切换到账号", idx + 1)
+            if idx != pref:
+                print("随申办：主号不可用，切换到账号", idx + 1)
+                pref = idx
             ACTIVE_COOKIE = ck
             active = idx
             ok[str(idx)] = True
@@ -221,7 +229,9 @@ def _ping_cookie(ck):
 
 
 def keepalive_backups():
-    """对非当前活跃账号各做一次最小访问，保持会话不过期"""
+    """对非当前活跃账号按 BACKUP_PING_MIN 分钟做一次最小访问，保持会话不过期"""
+    if BACKUP_PING_MIN and now_bj().minute % BACKUP_PING_MIN != 0:
+        return
     for ck in SB_COOKIES:
         if ck == ACTIVE_COOKIE:
             continue
@@ -1190,6 +1200,8 @@ def run_once(report=False):
     global SUPPRESS_PUSH
     state = load_state()
     bj = now_bj()
+    reload_schedule()
+    maybe_switch_back(bj)
     SUPPRESS_PUSH = in_quiet_hours() and not FORCE_HEARTBEAT
 
     cur_all = None
@@ -1311,14 +1323,47 @@ def run_once(report=False):
         write_report(cur_all, pd, notice, qnaj_ids, daily=(bj.hour == 12))
 
 
+def is_day(bj):
+    return DAY_START <= bj.hour < DAY_END
+
+
 def is_scheduled(bj):
-    """全天每 SCHED_STEP 分钟抓取一次（含夜间，用于会话保活）"""
-    return bool(SCHED_STEP) and bj.minute % SCHED_STEP == 0
+    """白天按 DAY_STEP、夜间按 NIGHT_STEP 抓取"""
+    step = DAY_STEP if is_day(bj) else NIGHT_STEP
+    return bool(step) and bj.minute % step == 0
 
 
 def is_report_time(bj):
-    """仅白天窗口的整点更新报表（夜间只保活、不刷新报表）"""
+    """白天整点更新报表"""
     return REPORT_START <= bj.hour <= REPORT_END and bj.minute == 0
+
+
+def should_report(bj):
+    """白天整点写报表；夜间每个抓取点也写（保证夜间变动能生成报表）"""
+    return is_report_time(bj) or (not is_day(bj))
+
+
+def reload_schedule():
+    global DAY_START, DAY_END, DAY_STEP, NIGHT_STEP, BACKUP_PING_MIN, SWITCH_BACK_HOUR
+    try:
+        c = _cfgmod.load()
+    except Exception:
+        return
+    DAY_START = int(c.get("day_start", DAY_START))
+    DAY_END = int(c.get("day_end", DAY_END))
+    DAY_STEP = max(1, int(c.get("day_step", DAY_STEP)))
+    NIGHT_STEP = max(1, int(c.get("night_step", NIGHT_STEP)))
+    BACKUP_PING_MIN = max(1, int(c.get("backup_ping_min", BACKUP_PING_MIN)))
+    SWITCH_BACK_HOUR = int(c.get("switch_back_hour", SWITCH_BACK_HOUR))
+
+
+def maybe_switch_back(bj):
+    if bj.hour == SWITCH_BACK_HOUR and bj.minute == 0:
+        acct = read_account()
+        if int(acct.get("preferred", 0) or 0) != 0:
+            acct["preferred"] = 0
+            write_account(acct)
+            print("到切回时间，恢复优先使用主号")
 
 
 def run_loop():
@@ -1329,7 +1374,7 @@ def run_loop():
             key = bj.strftime("%Y-%m-%d %H:%M")
             if key != last and is_scheduled(bj):
                 last = key
-                run_once(report=is_report_time(bj))
+                run_once(report=should_report(bj))
                 print(bj.strftime("%Y-%m-%d %H:%M:%S"), "本轮完成", flush=True)
         except Exception as e:
             print("循环异常：", repr(e))
