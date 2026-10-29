@@ -587,6 +587,7 @@ var rendPD = makeEditor({list:PDKW, tbody:'pdrows', add:'pdadd', api:'/api/pdite
     var pj={ total_change: !!(document.getElementById('p_total')||{}).checked,
              district_change: !!(document.getElementById('p_dist')||{}).checked,
              notice: !!(document.getElementById('p_notice')||{}).checked,
+             new_projects: !!(document.getElementById('p_newproj')||{}).checked,
              districts: dists,
              pd_updown: !!(document.getElementById('p_pdupdown')||{}).checked,
              keywords: rules(KW),
@@ -1076,6 +1077,9 @@ def render_account(request, u):
     <label class="chk"><input type="checkbox" id="p_notice" {ck(content.get("notice"), True)}> 随申办供应预告变动（新增/移除，含地址/供应日/租金）</label>
   </div>
   <div class="pushbox">
+    <label class="chk"><input type="checkbox" id="p_newproj" {ck(content.get("new_projects"), True)}> 新增/下线项目明细（所有项目：名称、行政区、在线套数、地址、电话）</label>
+  </div>
+  <div class="pushbox">
     <label class="chk"><input type="checkbox" id="p_dist" {ck(content.get("district_change"))}> 随申办特定行政区项目数量增减</label>
     <div class="muted" style="margin:6px 0 4px">勾选要关注的行政区（可多选）：</div>
     <div class="distlist">{dist_checks}</div>
@@ -1230,6 +1234,7 @@ def account_save(request: Request, serverchan: str = Form(""), wecom: str = Form
             push["content"] = {
                 "total_change": bool(pj.get("total_change")),
                 "notice": bool(pj.get("notice", True)),
+                "new_projects": bool(pj.get("new_projects", True)),
                 "district_change": bool(pj.get("district_change")),
                 "districts": [str(d) for d in (pj.get("districts") or []) if str(d).strip()],
                 "pd_updown": bool(pj.get("pd_updown")),

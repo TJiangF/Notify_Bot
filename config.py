@@ -30,6 +30,7 @@ DEFAULTS = {
         "district_change": False,
         "districts": [],
         "notice": True,
+        "new_projects": True,
         "keywords": [],
         "pd_updown": False,
         "pd_keywords": [],

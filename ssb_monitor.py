@@ -638,6 +638,27 @@ def build_push_digest(cur_all, pd_items, notice, baseline, push_cfg=None):
         elif old != cur["total"]:
             lines.append(f"随申办总项目数：{old} → {cur['total']}（{cur['total'] - old:+d}）")
 
+    if cfg.get("new_projects"):
+        oldp = baseline.get("projects")
+        nowp = cur["projects"]
+        if oldp is not None:
+            new_ids = [p for p in nowp if p not in oldp]
+            gone_ids = [p for p in oldp if p not in nowp]
+            if new_ids or gone_ids:
+                lines.append("【随申办·项目增减】")
+                for p in new_ids[:8]:
+                    v = nowp[p]
+                    lines.append(f"  🆕 新增：{v['name']}（{v['district']}，在线 {v['online']} 套）" + _fmt_detail(
+                        f"地址：{v['addr']}" if v.get("addr") else "", f"电话：{v['tel']}" if v.get("tel") else ""))
+                if len(new_ids) > 8:
+                    lines.append(f"  …等共 {len(new_ids)} 个新增")
+                for p in gone_ids[:8]:
+                    v = oldp[p]
+                    lines.append(f"  ❌ 下线：{v['name']}（{v.get('district', '')}）" + _fmt_detail(
+                        f"地址：{v['addr']}" if v.get("addr") else ""))
+                if len(gone_ids) > 8:
+                    lines.append(f"  …等共 {len(gone_ids)} 个下线")
+
     if cfg.get("district_change"):
         curp = cur["projects"]
         oldp_all = baseline.get("projects")
