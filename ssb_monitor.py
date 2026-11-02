@@ -342,7 +342,7 @@ def pd_login():
     except Exception:
         pass
     s = requests.Session()
-    for _ in range(12):
+    for _ in range(6):
         page = s.get(PD_LOGIN_PAGE, headers={"user-agent": UA}, timeout=25, allow_redirects=False)
         m = re.search(r'name="_csrf"\s+content="([^"]+)"', page.text or "")
         csrf = m.group(1) if m else ""
@@ -351,7 +351,7 @@ def pd_login():
         if len(code) != 5 or not code.isdigit():
             print(f"  PD验证码识别为 {code!r}，跳过重取")
             continue
-        data = {"username": PD_USER, "password": enc_pw, "captcha": code, "yzm": "",
+        data = {"username": PD_USER, "password": enc_pw, "yzm": code, "captcha": code,
                 "source": "", "remember-me": "true", "_csrf": csrf}
         H = {"X-CSRF-TOKEN": csrf, "X-Requested-With": "XMLHttpRequest",
              "Referer": PD_LOGIN_PAGE, "Origin": "https://pdrcgy.pudong.gov.cn", "user-agent": UA}
@@ -361,7 +361,11 @@ def pd_login():
         if r.status_code in (301, 302, 303) and "login.html" not in loc:
             print("  PD登录成功")
             return dict(s.cookies)
-    raise PdAuthError("自动登录失败（验证码多次未识别）")
+        if "a=2" in loc:
+            raise PdAuthError("账号密码不匹配（请检查 PD_USER / PD_PASS）")
+        if "a=3" in loc:
+            raise PdAuthError("该账号已在其他地方登录")
+    raise PdAuthError("验证码多次未识别")
 
 
 def _pd_request(session):
@@ -1255,7 +1259,7 @@ def run_once(report=False):
             pd = fetch_pd(state)
         except PdAuthError as e:
             print("明珠在线会话失效且自动登录失败：", e)
-            notify_err(state, ERR_PD, "⚠️ 明珠在线自动登录失败（会话过期且验证码未识别），请检查账号密码 Secret「PD_USER」「PD_PASS」。")
+            notify_err(state, ERR_PD, f"⚠️ 明珠在线自动登录失败：{e}")
         except Exception as e:
             print("明珠在线抓取失败：", repr(e))
             notify_err(state, ERR_PD, f"⚠️ 明珠在线获取数据失败：{type(e).__name__}: {e}")
