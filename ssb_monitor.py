@@ -406,6 +406,9 @@ def _sync_pd_hxphotos(session, csrf, project_ids):
         "x-requested-with": "XMLHttpRequest",
     }
     data = {}
+    prev = cache.get("data") or {}
+    prev_valid = {(pid, ft, path) for pid, groups in prev.items()
+                  for ft, paths in groups.items() for path in paths}
     try:
         for pg in range(1, 31):
             body = {
@@ -445,7 +448,7 @@ def _sync_pd_hxphotos(session, csrf, project_ids):
                         path = parts[0] + "/" + parts[2]
                     lst = data.setdefault(pid, {}).setdefault(ft, [])
                     if path not in lst and len(lst) < 8:
-                        if not _pd_img_ok(session, path):
+                        if (pid, ft, path) not in prev_valid and not _pd_img_ok(session, path):
                             continue
                         lst.append(path)
         if data:

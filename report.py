@@ -324,7 +324,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                         continue
                     hx += f'<div class="pdxhx"><span class="pdxhx-t">{esc(_ft)}</span><div class="dtgrid">'
                     for _p in _ps[:6]:
-                        hx += f'<div class="dtcard"><div class="dtthumb"><img class="pdimg" loading="lazy" src="/api/pdphoto?path={quote(_p, safe="")}"></div></div>'
+                        hx += f'<div class="dtcard"><div class="dtthumb"><img class="pdimg" loading="lazy" onerror="this.parentNode.parentNode.style.display=\'none\'" src="/api/pdphoto?path={quote(_p, safe="")}"></div></div>'
                     hx += '</div></div>'
                 hx += '</div>'
             pitems.append(
