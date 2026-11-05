@@ -1227,7 +1227,7 @@ function mapExpand(btn,key){{
     box.innerHTML='';
     if(!full){{ box.innerHTML='<div class="muted">未找到详情，请在下方「房源明细」查看</div>'; }}
     else {{
-      var clone=full.cloneNode(true); clone.classList.add('open');
+      var clone=full.cloneNode(true); clone.style.display=''; clone.classList.add('open');
       var ul=document.createElement('ul'); ul.className='pdlist'; ul.appendChild(clone); box.appendChild(ul);
       var h=clone.querySelector('.pdhead');
       if(h) h.addEventListener('click', function(){{
