@@ -1148,7 +1148,7 @@ function initAmap(){{
   try{{ window.__amap=new AMap.Map('amap',{{zoom:11,center:[121.4737,31.2304]}}); }}catch(e){{}}
 }}
 function unlockMap(){{
-  if(!CAN_MAP){{ location.href='/login'; return; }}
+  if(!CAN_MAP){{ try{{ localStorage.setItem('mapUnlock','1'); }}catch(e){{}} location.href='/login'; return; }}
   var box=document.getElementById('mapbox'); if(box) box.classList.add('unlocked');
   initAmap();
   setTimeout(function(){{ if(window.__amap && window.__amap.resize) window.__amap.resize(); }}, 250);
@@ -1255,6 +1255,7 @@ function renderMapList(hs){{
 var mapSel=null, mapDeb=null;
 window.addEventListener('load', function(){{
   initAmap();
+  try{{ if(CAN_MAP && localStorage.getItem('mapUnlock')==='1'){{ localStorage.removeItem('mapUnlock'); unlockMap(); }} }}catch(e){{}}
   var mq=document.getElementById('map_q');
   if(mq) mq.addEventListener('input', function(){{ mapSel=null; clearTimeout(mapDeb); mapDeb=setTimeout(mapSuggest,300); }});
   document.addEventListener('click', function(e){{
