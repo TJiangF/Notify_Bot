@@ -312,20 +312,11 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             fyc = "、".join(cats)
             cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
             badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
-            _photos = x.get("photos") or []
             _fylx = x.get("fylx") or []
-            _vr = x.get("vr") or ""
             hx = ''
-            if _photos or _fylx or _vr:
-                hx = '<div class="dts"><div class="dt-head">户型与图片</div>'
-                if _fylx:
-                    hx += '<div class="pdhz">' + ''.join(f'<span class="pdhz-chip">{esc(t)}</span>' for t in _fylx) + '</div>'
-                if _photos:
-                    hx += '<div class="dtgrid">' + ''.join(
-                        f'<div class="dtcard"><div class="dtthumb"><img class="pdimg" loading="lazy" src="/api/pdphoto?path={quote(p, safe="")}"></div></div>'
-                        for p in _photos[:12]) + '</div>'
-                if _vr:
-                    hx += f'<div style="margin-top:8px"><a class="dt-load" href="{esc(_vr)}" target="_blank" rel="noopener">VR 看房</a></div>'
+            if _fylx:
+                hx = '<div class="dts"><div class="dt-head">户型</div>'
+                hx += '<div class="pdhz">' + ''.join(f'<span class="pdhz-chip">{esc(t)}</span>' for t in _fylx) + '</div>'
                 hx += '</div>'
             pitems.append(
                 f'<li class="pditem" data-key="pd:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
