@@ -1186,6 +1186,18 @@ window.addEventListener('load', function(){{
   loadDoortypes(li);
   setTimeout(function(){{ li.scrollIntoView({{block:'start'}}); }}, 400);
 }})();
+(function(){{
+  var m=(location.search.match(/[?&]pdex=([^&]*)/));
+  if(!m) return;
+  var pid=decodeURIComponent(m[1]);
+  var wrap=document.getElementById('pdwrap');
+  if(wrap){{ wrap.style.display='block'; var btns=document.querySelectorAll('.listhead .tbtn'); if(btns[1]) btns[1].textContent='收起列表 ▴'; }}
+  var li=document.querySelector('.pditem[data-key="pd:'+pid+'"]');
+  if(!li) return;
+  li.classList.add('open');
+  var c=li.querySelector('.cmts'); if(c) loadComments(c);
+  setTimeout(function(){{ li.scrollIntoView({{block:'start'}}); }}, 400);
+}})();
 </script>
 </body></html>"""
 
