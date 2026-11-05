@@ -371,6 +371,22 @@ def pd_login():
 
 PD_HX_TTL = 6 * 3600
 
+def _pd_img_ok(session, path):
+    try:
+        r = session.get("https://pdrcgy.pudong.gov.cn/file",
+                        params={"op": "2", "bean": "rcajImg", "path": path},
+                        headers={"user-agent": UA, "referer": "https://pdrcgy.pudong.gov.cn/"},
+                        timeout=15, stream=True)
+        if r.status_code != 200:
+            return False
+        head = r.raw.read(16) or b""
+        r.close()
+        return (head.startswith(b"\xff\xd8") or head.startswith(b"\x89PNG")
+                or head.startswith(b"GIF8") or head.startswith(b"RIFF"))
+    except Exception:
+        return False
+
+
 def _sync_pd_hxphotos(session, csrf, project_ids):
     """从明珠“房源列表”(type=3)聚合 项目+户型 -> house_photo；6 小时缓存。"""
     try:
@@ -424,8 +440,13 @@ def _sync_pd_hxphotos(session, csrf, project_ids):
                     low = path.lower()
                     if path.endswith("//") or path.startswith("null/") or low.endswith(".jgp"):
                         continue
+                    parts = path.split("/", 2)
+                    if len(parts) >= 3 and parts[0] == parts[1] == pid:
+                        path = parts[0] + "/" + parts[2]
                     lst = data.setdefault(pid, {}).setdefault(ft, [])
                     if path not in lst and len(lst) < 8:
+                        if not _pd_img_ok(session, path):
+                            continue
                         lst.append(path)
         if data:
             os.makedirs(os.path.dirname(PD_HX_FILE), exist_ok=True)
