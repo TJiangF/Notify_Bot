@@ -1234,8 +1234,8 @@ function mapExpand(btn,key){{
         clone.classList.toggle('open');
         if(clone.classList.contains('open')){{ var c=clone.querySelector('.cmts'); if(c) loadComments(c); if(clone.querySelector('.dts')) loadDoortypes(clone); }}
       }});
-      var c=clone.querySelector('.cmts'); if(c) loadComments(c);
-      if(clone.querySelector('.dts')) loadDoortypes(clone);
+      var c=clone.querySelector('.cmts'); if(c){{ c.dataset.loaded=''; loadComments(c); }}
+      var dts=clone.querySelector('.dts'); if(dts){{ dts.dataset.loaded=''; loadDoortypes(clone); }}
     }}
     box.dataset.loaded='1';
   }}
