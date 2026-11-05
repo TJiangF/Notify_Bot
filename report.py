@@ -716,14 +716,14 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     var data = {{
       labels: labels,
       datasets: [
-        {{ label: '随申办项目', data: pts.map(function(x) {{ return x.ssb; }}), borderColor: '#2f6fed', backgroundColor: 'rgba(47,111,237,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
-        {{ label: '随申办在线', data: pts.map(function(x) {{ return x.online; }}), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
-        {{ label: '明珠项目', data: pts.map(function(x) {{ return x.pd; }}), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
-        {{ label: '明珠可租', data: pts.map(function(x) {{ return x.kzts; }}), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }}
+        {{ label: '随申办项目', yAxisID: 'y1', data: pts.map(function(x) {{ return x.ssb; }}), borderColor: '#2f6fed', backgroundColor: 'rgba(47,111,237,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
+        {{ label: '随申办在线', yAxisID: 'y', data: pts.map(function(x) {{ return x.online; }}), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
+        {{ label: '明珠项目', yAxisID: 'y1', data: pts.map(function(x) {{ return x.pd; }}), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
+        {{ label: '明珠可租', yAxisID: 'y', data: pts.map(function(x) {{ return x.kzts; }}), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }}
       ]
     }};
     if (chart) {{ chart.data = data; chart.update(); }}
-    else {{ chart = new Chart(cv, {{ type: 'line', data: data, options: {{ responsive: true, maintainAspectRatio: false, interaction: {{ mode: 'index', intersect: false }}, plugins: {{ legend: {{ position: 'bottom' }} }}, scales: {{ y: {{ beginAtZero: true }} }} }} }}); }}
+    else {{ chart = new Chart(cv, {{ type: 'line', data: data, options: {{ responsive: true, maintainAspectRatio: false, interaction: {{ mode: 'index', intersect: false }}, plugins: {{ legend: {{ position: 'bottom' }} }}, scales: {{ y: {{ position: 'left', beginAtZero: true, title: {{ display: true, text: '套数' }} }}, y1: {{ position: 'right', beginAtZero: true, grid: {{ drawOnChartArea: false }}, title: {{ display: true, text: '项目数' }} }} }} }} }}); }}
     var lab = document.getElementById('trendLabel');
     if (lab) lab.textContent = pts[0].d + ' ~ ' + pts[pts.length - 1].d + '（30 天窗口）';
   }}
