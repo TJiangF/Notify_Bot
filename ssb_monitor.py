@@ -47,6 +47,7 @@ PAGE_SIZE = 500
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ACCOUNT_FILE = os.path.join(BASE_DIR, "data", "sb_account.json")
 PD_HX_FILE = os.path.join(BASE_DIR, "data", "pd_hxphotos.json")
+PD_HXT_FILE = os.path.join(BASE_DIR, "data", "pd_hxt.json")
 FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
 SUPPRESS_PUSH = False
 
@@ -463,6 +464,58 @@ def _sync_pd_hxphotos(session, csrf, project_ids):
     return cache.get("data") or {}
 
 
+PD_HXT_TTL = 6 * 3600
+
+def _sync_pd_hxt(session, project_ids):
+    """从 getProjectDetail.html?id= 取 hxt（户型图），按项目缓存；6 小时。"""
+    try:
+        cache = json.load(open(PD_HXT_FILE))
+    except Exception:
+        cache = {}
+    if cache.get("data") and time.time() - float(cache.get("ts") or 0) < PD_HXT_TTL:
+        return cache.get("data") or {}
+    data = {}
+    for pid in project_ids:
+        if not pid:
+            continue
+        try:
+            r = session.get("https://pdrcgy.pudong.gov.cn/api/rcaj/getProjectDetail.html",
+                            params={"id": pid},
+                            headers={"user-agent": UA, "x-requested-with": "XMLHttpRequest",
+                                     "referer": PD_PAGE},
+                            timeout=20)
+            if r.status_code != 200:
+                continue
+            rows = r.json().get("rows") or []
+            if not rows:
+                continue
+            hxt = rows[0].get("hxt") or ""
+            if not isinstance(hxt, str):
+                continue
+            paths = []
+            for path in [x.strip() for x in hxt.split(",") if x.strip()]:
+                low = path.lower()
+                if path.endswith("//") or path.startswith("null/") or low.endswith(".jgp"):
+                    continue
+                parts = path.split("/", 2)
+                if len(parts) >= 3 and parts[0] == parts[1] == str(pid):
+                    path = parts[0] + "/" + parts[2]
+                if path not in paths:
+                    paths.append(path)
+            if paths:
+                data[str(pid)] = paths
+        except Exception:
+            continue
+    if data:
+        os.makedirs(os.path.dirname(PD_HXT_FILE), exist_ok=True)
+        tmp = PD_HXT_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"ts": time.time(), "data": data}, f, ensure_ascii=False)
+        os.replace(tmp, PD_HXT_FILE)
+        return data
+    return cache.get("data") or {}
+
+
 def _pd_request(session):
     page = session.get(PD_PAGE, headers={"accept": "text/html", "user-agent": UA},
                        timeout=25, allow_redirects=False)
@@ -505,7 +558,7 @@ def _pd_request(session):
             seen[str(it["projectId"])] = it
     items = list(seen.values())
     try:
-        hx = _sync_pd_hxphotos(session, csrf, [it.get("projectId") for it in items])
+        hx = _sync_pd_hxt(session, [it.get("projectId") for it in items])
     except Exception:
         hx = {}
     return items, hx
@@ -539,7 +592,8 @@ def fetch_pd(state):
         raw, hx = _pd_request(s2)
     items = _map_pd(raw)
     for it in items:
-        it["hxphotos"] = (hx or {}).get(str(it["id"]), {})
+        _paths = (hx or {}).get(str(it["id"])) or []
+        it["hxphotos"] = {"户型图": _paths} if _paths else {}
     return items
 
 
