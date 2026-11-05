@@ -595,11 +595,10 @@ def fetch_pd(state):
         for k, v in ck.items():
             s2.cookies.set(k, v)
         raw, hx = _pd_request(s2)
-    items = _map_pd(raw)
-    for it in items:
-        _paths = (hx or {}).get(str(it["id"])) or []
+    for it in raw:
+        _paths = (hx or {}).get(str(it.get("projectId"))) or []
         it["hxphotos"] = {"户型图": _paths} if _paths else {}
-    return items
+    return raw
 
 
 def load_state():
@@ -990,7 +989,7 @@ def _map_pd(items):
              "kzts": r.get("kzts") or 0, "status": r.get("projectStatusName"), "addr": r.get("LOCATION"),
              "tel": r.get("lxdh"), "price": r.get("price_range"), "metro": r.get("metro_subway") or [],
              "zone": r.get("zoneName"), "supply_date": r.get("supplyDate"), "release_time": r.get("releaseTime"),
-             "fylx": r.get("xmfyzts") or []} for r in (items or [])]
+             "fylx": r.get("xmfyzts") or [], "hxphotos": r.get("hxphotos") or {}} for r in (items or [])]
 
 
 def _map_notice(items):
