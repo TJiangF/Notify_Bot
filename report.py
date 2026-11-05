@@ -346,12 +346,12 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 
     ssb_filter, ssb_items, pd_filter, pd_items = all_projects(latest)
 
-    trend = []
-    for s in snaps:
-        trend.append(f"<tr><td>{s['date']}</td><td>{len(s['ssb'])}</td>"
-                     f"<td>{sum(x['online'] for x in s['ssb'])}</td>"
-                     f"<td>{len(s['pd'])}</td><td>{sum(x['kzts'] for x in s['pd'])}</td></tr>")
-    trend_table = "\n".join(trend)
+    sorted_snaps = sorted(snaps, key=lambda s: str(s.get("date") or ""))
+    trend_data = [{"d": s["date"], "ssb": len(s["ssb"]),
+                   "online": sum((x.get("online") or 0) for x in s["ssb"]),
+                   "pd": len(s["pd"]),
+                   "kzts": sum((x.get("kzts") or 0) for x in s["pd"])} for s in sorted_snaps]
+    trend_json = json.dumps(trend_data, ensure_ascii=False).replace("</", "<\\/")
 
     opts = ""
     if base_options:
@@ -376,27 +376,33 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     else:
         stale_banner = ""
 
-    if can_map:
-        map_block = """<div class="box">
-  <div class="mapsearch">
-    <div class="mapsb">
-      <input id="map_q" placeholder="输入上海地址或地标，如：人民广场 / 张江科学之门 / 某路某弄" autocomplete="off">
-      <div id="map_sug" class="mapsug"></div>
-    </div>
-    <button type="button" onclick="doFind()">找附近房源</button>
-    <span id="map_msg" class="muted"></span>
-  </div>
-  <div id="amap" class="amap"></div>
-  <div id="map_list" class="maplist"></div>
-</div>"""
-        amap_script = '<script src="https://webapi.amap.com/maps?v=1.4.15&key=c226df9a44846d549b4f1689ece31e5"></script>'
-    else:
-        map_block = """<div class="mapgate">
-  <div class="mapgate-ico">🔒</div>
-  <div>登录后即可使用「智能找房」（按地址找最近房源）</div>
-  <div style="margin-top:12px"><a class="btn" href="/login">登录</a> <a class="btn ghost" href="/register">免费注册</a></div>
-</div>"""
-        amap_script = ""
+    _lock_txt = "登录后点击查看地图" if not can_map else "点击查看地图"
+    _lock_btn = "登录并查看" if not can_map else "点击查看地图"
+    map_block = (
+        '<div class="box mapbox" id="mapbox">'
+        '<div class="map-inner">'
+        '<div class="mapsearch">'
+        '<div class="mapsb">'
+        '<input id="map_q" placeholder="输入上海地址或地标，如：人民广场 / 张江科学之门 / 某路某弄" autocomplete="off">'
+        '<div id="map_sug" class="mapsug"></div>'
+        '</div>'
+        '<button type="button" onclick="doFind()">找附近房源</button>'
+        '<span id="map_msg" class="muted"></span>'
+        '</div>'
+        '<div id="amap" class="amap"></div>'
+        '<div id="map_list" class="maplist"></div>'
+        '</div>'
+        '<div class="map-lock" onclick="unlockMap()">'
+        '<div class="map-lock-inner">'
+        '<div class="map-lock-ico">🔒</div>'
+        '<div class="map-lock-t">智能找房</div>'
+        f'<div class="map-lock-d">{_lock_txt}</div>'
+        f'<button type="button" class="btn">{_lock_btn}</button>'
+        '</div>'
+        '</div>'
+        '</div>'
+    )
+    amap_script = '<script src="https://webapi.amap.com/maps?v=1.4.15&key=c226df9a44846d549b4f1689ece31e5"></script>'
     js_vars = ("var CAN_MAP=%d; var LOGGED_IN=%d; var USER_NAME=%s; var FAV_KEYS=%s;"
                % (1 if can_map else 0, 1 if logged_in else 0,
                   json.dumps(user_name or "", ensure_ascii=False),
@@ -589,6 +595,23 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .mapmeta{{font-size:12px;color:#666;margin-top:2px}}
  .mapcmt{{margin-top:6px}}
  .mapcmt-btn{{font-size:12px;padding:2px 10px;border:1px solid #bfd3ff;color:#2563eb;background:#fff;border-radius:12px;cursor:pointer}}
+ .mapactions{{margin-top:6px}}
+ .mapfull{{margin-top:8px}}
+ .mapfull .pdlist{{margin:0}}
+ .mapfull .pditem{{border:1px solid #eef0f3;border-radius:8px;padding:0 10px;background:#fafbfc}}
+ .mapbox{{position:relative;overflow:hidden}}
+ .map-inner{{filter:blur(7px);opacity:.9;pointer-events:none;user-select:none;transition:filter .25s,opacity .25s}}
+ .mapbox.unlocked .map-inner{{filter:none;opacity:1;pointer-events:auto}}
+ .map-lock{{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;background:rgba(245,247,250,.25);cursor:pointer}}
+ .mapbox.unlocked .map-lock{{display:none}}
+ .map-lock-inner{{background:rgba(255,255,255,.86);border:1px solid #e3e8f0;border-radius:14px;padding:20px 26px;text-align:center;box-shadow:0 8px 30px rgba(15,23,42,.12);backdrop-filter:blur(4px)}}
+ .map-lock-ico{{font-size:30px;margin-bottom:4px}}
+ .map-lock-t{{font-weight:700;font-size:17px;margin-bottom:4px}}
+ .map-lock-d{{color:#667085;font-size:13px;margin-bottom:12px}}
+ .chartbox{{background:#fff;border-radius:10px;padding:14px 16px;height:340px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:10px}}
+ .chartbox canvas{{width:100%!important;height:100%!important}}
+ .trendctl{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 6px;font-size:13px;color:#667085}}
+ .trendctl input[type=range]{{width:280px;max-width:60vw}}
  .muted{{color:#8794a8}}
  .mapgate{{height:300px;border-radius:10px;margin-top:10px;background:#eef1f5;border:1px dashed #c7d0dc;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8794a8;font-size:14px;gap:6px;text-align:center}}
  .mapgate-ico{{font-size:30px}}
@@ -606,18 +629,18 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
    .card .n{{font-size:20px}}
    .cmp{{width:96vw;height:94vh}}
  }}
-</style></head><body>
+</style><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script></head><body>
 <div id="sidebar"><div class="sb-inner">
 <button class="sb-toggle" onclick="toggleNav()">«</button>
 <div class="sb-title">章节</div>
 {user_area}
 <a class="sb-link" href="#sec-top">概览</a>
 <a class="sb-link" href="#sec-map">智能找房</a>
+<a class="sb-link" href="#sec-chg">变动明细</a>
 <a class="sb-link" href="#sec-notice">供应预告</a>
+<a class="sb-link" href="#sec-all">房源明细</a>
 <a class="sb-link" href="#sec-ssb">随申办·行政区</a>
 <a class="sb-link" href="#sec-pd">明珠在线·行政区</a>
-<a class="sb-link" href="#sec-chg">变动明细</a>
-<a class="sb-link" href="#sec-all">全部房源明细</a>
 <a class="sb-link" href="#sec-trend">逐日趋势</a>
 </div></div>
 <div class="wrap">
@@ -635,27 +658,17 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2 id="sec-map">🧭 智能找房</h2>
 {map_block}
 
-<h2 id="sec-notice">随申办 · 供应预告（{len(notice)}）</h2>
-<table><thead><tr><th>项目</th><th>计划供应日</th><th>租金</th><th>地址</th><th>电话</th><th>运营单位</th></tr></thead>
-<tbody>{notice_table}</tbody></table>
-
-<h2 id="sec-ssb">随申办 · 按行政区</h2>
-<table><thead><tr><th>行政区</th><th>项目数</th><th>在线房源</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
-<tbody>{dist_table}</tbody></table>
-<div class="note">* "在线房源"取自平台自带字段（onlineFlatNum），仅代表该时刻的在线套数，不保证随时可租。</div>
-
-<h2 id="sec-pd">明珠在线 · 按行政区</h2>
-<table><thead><tr><th>行政区</th><th>项目数</th><th>可租套数</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
-<tbody>{pd_table}</tbody></table>
-<div class="note">* "可租套数"取自平台页面自带字段（kzts），不保证当前有房；显示 0 套表示该项目当前无可租房源（如已租满或尚未供应）。</div>
-
 <h2 id="sec-chg">变动明细（当前 vs 基线）</h2>
 <div class="box">
 {detail("随申办", ssb_ch)}
 {detail("明珠在线", pd_ch)}
 </div>
 
-<h2 id="sec-all">全部房源明细</h2>
+<h2 id="sec-notice">随申办 · 供应预告（{len(notice)}）</h2>
+<table><thead><tr><th>项目</th><th>计划供应日</th><th>租金</th><th>地址</th><th>电话</th><th>运营单位</th></tr></thead>
+<tbody>{notice_table}</tbody></table>
+
+<h2 id="sec-all">房源明细</h2>
 <div class="box">
 <div class="allbox">
 <div class="listhead"><h3>随申办</h3><div class="hright"><div class="searchbox"><input id="sb_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="sb_clr">×</button><div id="sb_sug" class="sug"></div></div><button type="button" class="tbtn" onclick="toggleList('sbwrap',this)">展开列表 ▾</button></div></div>
@@ -670,9 +683,55 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 </div>
 </div>
 
+<h2 id="sec-ssb">随申办 · 按行政区</h2>
+<table><thead><tr><th>行政区</th><th>项目数</th><th>在线房源</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
+<tbody>{dist_table}</tbody></table>
+<div class="note">* "在线房源"取自平台自带字段（onlineFlatNum），仅代表该时刻的在线套数，不保证随时可租。</div>
+
+<h2 id="sec-pd">明珠在线 · 按行政区</h2>
+<table><thead><tr><th>行政区</th><th>项目数</th><th>可租套数</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
+<tbody>{pd_table}</tbody></table>
+<div class="note">* "可租套数"取自平台页面自带字段（kzts），不保证当前有房；显示 0 套表示该项目当前无可租房源（如已租满或尚未供应）。</div>
+
 <h2 id="sec-trend">逐日趋势</h2>
-<table><thead><tr><th>日期</th><th>随申办项目</th><th>随申办在线</th><th>明珠项目</th><th>明珠可租</th></tr></thead>
-<tbody>{trend_table}</tbody></table>
+<div class="chartbox"><canvas id="trendChart"></canvas></div>
+<div class="trendctl"><label>窗口结束：<input type="range" id="trendEnd" min="0" step="1"></label> <span id="trendLabel" class="muted"></span></div>
+<div class="note">折线图；默认最近 30 天，拖动滑块可平移窗口。</div>
+<script>
+(function(){{
+  var TREND = {trend_json};
+  var cv = document.getElementById('trendChart');
+  if (!cv) return;
+  if (typeof Chart === 'undefined') {{ cv.parentNode.innerHTML = '<div class="muted">图表库加载失败，请刷新重试</div>'; return; }}
+  var chart = null;
+  function d2(t) {{ return new Date(t + 'T00:00:00Z'); }}
+  function draw(endIdx) {{
+    if (!TREND.length) {{ cv.parentNode.innerHTML = '<div class="muted">暂无趋势数据</div>'; return; }}
+    endIdx = Math.max(0, Math.min(TREND.length - 1, endIdx));
+    var end = d2(TREND[endIdx].d);
+    var start = new Date(end.getTime() - 29 * 86400000);
+    var pts = TREND.filter(function(x) {{ var t = d2(x.d); return t >= start && t <= end; }});
+    if (!pts.length) pts = [TREND[endIdx]];
+    var labels = pts.map(function(x) {{ return x.d.slice(5); }});
+    var data = {{
+      labels: labels,
+      datasets: [
+        {{ label: '随申办项目', data: pts.map(function(x) {{ return x.ssb; }}), borderColor: '#2f6fed', backgroundColor: 'rgba(47,111,237,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
+        {{ label: '随申办在线', data: pts.map(function(x) {{ return x.online; }}), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
+        {{ label: '明珠项目', data: pts.map(function(x) {{ return x.pd; }}), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
+        {{ label: '明珠可租', data: pts.map(function(x) {{ return x.kzts; }}), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }}
+      ]
+    }};
+    if (chart) {{ chart.data = data; chart.update(); }}
+    else {{ chart = new Chart(cv, {{ type: 'line', data: data, options: {{ responsive: true, maintainAspectRatio: false, interaction: {{ mode: 'index', intersect: false }}, plugins: {{ legend: {{ position: 'bottom' }} }}, scales: {{ y: {{ beginAtZero: true }} }} }} }}); }}
+    var lab = document.getElementById('trendLabel');
+    if (lab) lab.textContent = pts[0].d + ' ~ ' + pts[pts.length - 1].d + '（30 天窗口）';
+  }}
+  var r = document.getElementById('trendEnd');
+  if (r) {{ r.max = Math.max(0, TREND.length - 1); r.value = TREND.length - 1; r.addEventListener('input', function() {{ draw(parseInt(r.value, 10)); }}); }}
+  draw(TREND.length - 1);
+}})();
+</script>
 <div class="icp-footer"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">苏ICP备2026080883号</a></div>
 </div>
 <a class="cmp-fab push-fab" href="/account">🔔 推送设置</a>
@@ -1074,10 +1133,9 @@ document.addEventListener('click', function(e){{
   if(im){{ e.stopPropagation(); openImgZoom(im.getAttribute('src')); }}
 }});
 document.addEventListener('click', function(e){{
-  var b=e.target.closest&&e.target.closest('.mapcmt-btn'); if(!b) return;
-  var c=b.parentNode.querySelector('.cmts'); if(!c) return;
-  if(c.style.display==='none'){{ c.style.display='block'; b.textContent='收起评论'; loadComments(c); }}
-  else {{ c.style.display='none'; b.textContent='查看评论'; }}
+  var b=e.target.closest&&e.target.closest('.map-expand'); if(!b) return;
+  e.stopPropagation();
+  mapExpand(b, b.getAttribute('data-key'));
 }});
 document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.addEventListener('change', filterPd); }});
 ['pd_fmin','pd_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterPd); }});
@@ -1088,6 +1146,12 @@ filterSb();
 function initAmap(){{
   if(window.__amap || typeof AMap==='undefined') return;
   try{{ window.__amap=new AMap.Map('amap',{{zoom:11,center:[121.4737,31.2304]}}); }}catch(e){{}}
+}}
+function unlockMap(){{
+  if(!CAN_MAP){{ location.href='/login'; return; }}
+  var box=document.getElementById('mapbox'); if(box) box.classList.add('unlocked');
+  initAmap();
+  setTimeout(function(){{ if(window.__amap && window.__amap.resize) window.__amap.resize(); }}, 250);
 }}
 function mapPin(color){{
   return '<div style="width:20px;height:20px;border-radius:50% 50% 50% 0;background:'+color+';transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)"></div>';
@@ -1152,6 +1216,31 @@ function doFind(){{
     if(mp.setFitView) mp.setFitView();
   }}).catch(function(){{ msg.textContent='查询失败'; }});
 }}
+function mapExpand(btn,key){{
+  var item=btn.closest('.mapitem'); if(!item) return;
+  var box=item.querySelector('.mapfull'); if(!box) return;
+  if(box.style.display==='block'){{ box.style.display='none'; btn.textContent='展开完整信息'; return; }}
+  if(!box.dataset.loaded){{
+    var src=key.split(':')[0];
+    var list=document.getElementById(src==='ssb'?'sblist':'pdlist');
+    var full=list?list.querySelector('.pditem[data-key="'+key+'"]'):null;
+    box.innerHTML='';
+    if(!full){{ box.innerHTML='<div class="muted">未找到详情，请在下方「房源明细」查看</div>'; }}
+    else {{
+      var clone=full.cloneNode(true); clone.classList.add('open');
+      var ul=document.createElement('ul'); ul.className='pdlist'; ul.appendChild(clone); box.appendChild(ul);
+      var h=clone.querySelector('.pdhead');
+      if(h) h.addEventListener('click', function(){{
+        clone.classList.toggle('open');
+        if(clone.classList.contains('open')){{ var c=clone.querySelector('.cmts'); if(c) loadComments(c); if(clone.querySelector('.dts')) loadDoortypes(clone); }}
+      }});
+      var c=clone.querySelector('.cmts'); if(c) loadComments(c);
+      if(clone.querySelector('.dts')) loadDoortypes(clone);
+    }}
+    box.dataset.loaded='1';
+  }}
+  box.style.display='block'; btn.textContent='收起完整信息';
+}}
 function renderMapList(hs){{
   var el=document.getElementById('map_list'); if(!el) return;
   var h='';
@@ -1159,7 +1248,7 @@ function renderMapList(hs){{
     var d=(x.dist<1000)?(x.dist+' 米'):((x.dist/1000).toFixed(2)+' 公里');
     var cls=(x.src==='随申办')?'tag-sb':'tag-pd';
     var key=(x.src==='随申办'?'ssb:':'pd:')+x.id;
-    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div style="flex:1;min-width:0"><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+'</div><div class="mapcmt"><button type="button" class="mapcmt-btn">查看评论</button><div class="cmts" data-key="'+key+'" style="display:none"></div></div></div></div>';
+    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div style="flex:1;min-width:0"><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+'</div><div class="mapactions"><button type="button" class="mapcmt-btn map-expand" data-key="'+key+'">展开完整信息</button></div><div class="mapfull" style="display:none"></div></div></div>';
   }});
   el.innerHTML=h;
 }}
@@ -1173,7 +1262,7 @@ window.addEventListener('load', function(){{
     if(box && (!e.target.closest || !e.target.closest('.mapsb'))) box.style.display='none';
   }});
   var m=(location.search.match(/[?&]q=([^&]*)/));
-  if(m && mq){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
+  if(m && mq && CAN_MAP){{ mq.value=decodeURIComponent(m[1]); doFind(); }}
 }});
 (function(){{
   var m=(location.search.match(/[?&]ex=([^&]*)/));
