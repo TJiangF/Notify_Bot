@@ -7,6 +7,7 @@ import html
 import threading
 import shutil
 import re
+import hashlib
 import requests
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
@@ -254,6 +255,35 @@ def api_doortype_photo(fileId: str = ""):
         data, mime = DT.photo(fid)
     except Exception:
         return Response(status_code=404)
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
+
+
+PD_PHOTO_DIR = os.path.join(DATA_DIR, "pdphoto")
+
+
+@app.get("/api/pdphoto")
+def api_pdphoto(path: str = ""):
+    path = (path or "").strip()
+    if not re.match(r"^\d+/[^/]+$", path):
+        return Response(status_code=400)
+    os.makedirs(PD_PHOTO_DIR, exist_ok=True)
+    key = hashlib.md5(path.encode("utf-8")).hexdigest()
+    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        p = os.path.join(PD_PHOTO_DIR, key + ext)
+        if os.path.exists(p):
+            data = open(p, "rb").read()
+            mime, _ = DT._sniff(data)
+            return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
+    try:
+        r = requests.get("https://pdrcgy.pudong.gov.cn/file",
+                         params={"op": "2", "bean": "rcajImg", "path": path},
+                         headers={"user-agent": "Mozilla/5.0"}, timeout=30)
+        r.raise_for_status()
+    except Exception:
+        return Response(status_code=404)
+    data = r.content
+    mime, ext = DT._sniff(data)
+    open(os.path.join(PD_PHOTO_DIR, key + ext), "wb").write(data)
     return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
 
 

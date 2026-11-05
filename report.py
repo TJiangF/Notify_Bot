@@ -4,6 +4,7 @@ import json
 import glob
 from collections import defaultdict
 from datetime import datetime
+from urllib.parse import quote
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE, "data")
@@ -311,6 +312,21 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             fyc = "、".join(cats)
             cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
             badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
+            _photos = x.get("photos") or []
+            _fylx = x.get("fylx") or []
+            _vr = x.get("vr") or ""
+            hx = ''
+            if _photos or _fylx or _vr:
+                hx = '<div class="dts"><div class="dt-head">户型与图片</div>'
+                if _fylx:
+                    hx += '<div class="pdhz">' + ''.join(f'<span class="pdhz-chip">{esc(t)}</span>' for t in _fylx) + '</div>'
+                if _photos:
+                    hx += '<div class="dtgrid">' + ''.join(
+                        f'<div class="dtcard"><div class="dtthumb"><img class="pdimg" loading="lazy" src="/api/pdphoto?path={quote(p, safe="")}"></div></div>'
+                        for p in _photos[:12]) + '</div>'
+                if _vr:
+                    hx += f'<div style="margin-top:8px"><a class="dt-load" href="{esc(_vr)}" target="_blank" rel="noopener">VR 看房</a></div>'
+                hx += '</div>'
             pitems.append(
                 f'<li class="pditem" data-key="pd:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
@@ -324,7 +340,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 f'<div class="pdcell"><b>供应</b>{esc(x.get("supply_date")) or "—"}</div>'
                 f'<div class="pdcell"><b>发布</b>{esc(x.get("release_time")) or "—"}</div>'
                 f'<div class="pdcell"><b>户型</b>{esc(fylx) or "—"}</div>'
-                f'</div><div class="cmts" data-key="pd:{esc(str(x.get("id")))}"></div></div></li>')
+                f'</div>{hx}<div class="cmts" data-key="pd:{esc(str(x.get("id")))}"></div></div></li>')
         pd_items = "".join(pitems)
         return ssb_filter, ssb_items, pd_filter, pd_items
 
@@ -525,6 +541,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .dtm-table td:first-child{{color:#667085;width:120px}}
  .dtm-imgs{{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}}
  .dtm-imgs img{{width:100%;border-radius:8px;background:#f4f6fa;cursor:zoom-in}}
+ .pdhz{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}}
+ .pdhz-chip{{font-size:12px;background:#eef4ff;color:#1d4ed8;border-radius:12px;padding:3px 10px}}
+ .pdimg{{cursor:zoom-in}}
  .imgzoom{{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;display:flex;align-items:center;justify-content:center;padding:10px;cursor:zoom-out}}
  .imgzoom img{{max-width:96vw;max-height:94vh;object-fit:contain;border-radius:6px}}
  @media(max-width:520px){{ .dtgrid{{grid-template-columns:repeat(2,1fr)}} .dtmodal{{padding:12px}} }}
@@ -1047,6 +1066,10 @@ document.querySelectorAll('.pdhead').forEach(function(h){{ h.addEventListener('c
 document.addEventListener('click', function(e){{
   var b=e.target.closest&&e.target.closest('.dt-load');
   if(b){{ e.stopPropagation(); loadDoortypes(b.closest('.pditem')); }}
+}});
+document.addEventListener('click', function(e){{
+  var im=e.target.closest&&e.target.closest('.pdimg');
+  if(im){{ e.stopPropagation(); openImgZoom(im.getAttribute('src')); }}
 }});
 document.addEventListener('click', function(e){{
   var b=e.target.closest&&e.target.closest('.mapcmt-btn'); if(!b) return;
