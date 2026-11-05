@@ -46,6 +46,7 @@ STATE = os.environ.get("SSB_STATE", "ssb_state.json")
 PAGE_SIZE = 500
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ACCOUNT_FILE = os.path.join(BASE_DIR, "data", "sb_account.json")
+PD_HX_FILE = os.path.join(BASE_DIR, "data", "pd_hxphotos.json")
 FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
 SUPPRESS_PUSH = False
 
@@ -368,6 +369,76 @@ def pd_login():
     raise PdAuthError("验证码多次未识别")
 
 
+PD_HX_TTL = 6 * 3600
+
+def _sync_pd_hxphotos(session, csrf, project_ids):
+    """从明珠“房源列表”(type=3)聚合 项目+户型 -> house_photo；6 小时缓存。"""
+    try:
+        cache = json.load(open(PD_HX_FILE))
+    except Exception:
+        cache = {}
+    if cache.get("data") and time.time() - float(cache.get("ts") or 0) < PD_HX_TTL:
+        return cache.get("data") or {}
+    ids = {str(x) for x in (project_ids or [])}
+    headers = {
+        "accept": "application/json, text/javascript, */*; q=0.01",
+        "content-type": "application/json;charset=UTF-8",
+        "origin": "https://pdrcgy.pudong.gov.cn",
+        "referer": PD_PAGE,
+        "user-agent": UA,
+        "x-csrf-token": csrf,
+        "x-requested-with": "XMLHttpRequest",
+    }
+    data = {}
+    try:
+        for pg in range(1, 31):
+            body = {
+                "checkdDicData": {"xm_pq": [], "xm_qy": [], "xm_dtx": "", "xm_dtz": [],
+                                  "xm_kfs": [], "xm_kzts": [], "xm_zt": [], "xm_fylx": []},
+                "xm_input": "", "tj_input": "", "type": 3,
+                "page_param": {"PAGE": pg, "LIMIT": 500}, "qyzs": None,
+            }
+            r = session.post(PD_API, headers=headers, json=body, timeout=30)
+            if r.status_code != 200:
+                break
+            j = r.json()
+            rows = []
+            for k in ("house1", "house2", "house3", "house4"):
+                rows += j.get(k) or []
+            uniq = {}
+            for row in rows:
+                hid = row.get("informationId")
+                if hid:
+                    uniq[hid] = row
+            if not uniq:
+                break
+            for row in uniq.values():
+                pid = str(row.get("projectId"))
+                if pid not in ids:
+                    continue
+                ft = (row.get("flatType") or "户型").strip() or "户型"
+                hp = row.get("house_photo") or ""
+                if not isinstance(hp, str):
+                    continue
+                for path in [x.strip() for x in hp.split(",") if x.strip()]:
+                    low = path.lower()
+                    if path.endswith("//") or path.startswith("null/") or low.endswith(".jgp"):
+                        continue
+                    lst = data.setdefault(pid, {}).setdefault(ft, [])
+                    if path not in lst and len(lst) < 8:
+                        lst.append(path)
+        if data:
+            os.makedirs(os.path.dirname(PD_HX_FILE), exist_ok=True)
+            tmp = PD_HX_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"ts": time.time(), "data": data}, f, ensure_ascii=False)
+            os.replace(tmp, PD_HX_FILE)
+            return data
+    except Exception as e:
+        print("PD 房源图同步失败：", e)
+    return cache.get("data") or {}
+
+
 def _pd_request(session):
     page = session.get(PD_PAGE, headers={"accept": "text/html", "user-agent": UA},
                        timeout=25, allow_redirects=False)
@@ -408,7 +479,12 @@ def _pd_request(session):
     for k in ("project1", "project2", "project3"):
         for it in (j.get(k) or []):
             seen[str(it["projectId"])] = it
-    return list(seen.values())
+    items = list(seen.values())
+    try:
+        hx = _sync_pd_hxphotos(session, csrf, [it.get("projectId") for it in items])
+    except Exception:
+        hx = {}
+    return items, hx
 
 
 def fetch_pd(state):
@@ -424,7 +500,7 @@ def fetch_pd(state):
                 k, v = part.strip().split("=", 1)
                 s.cookies.set(k, v)
     try:
-        return _pd_request(s)
+        raw, hx = _pd_request(s)
     except PdAuthError as e:
         print("PD 会话失效：", e)
         if not (PD_USER and PD_PASS):
@@ -436,7 +512,11 @@ def fetch_pd(state):
         s2 = requests.Session()
         for k, v in ck.items():
             s2.cookies.set(k, v)
-        return _pd_request(s2)
+        raw, hx = _pd_request(s2)
+    items = _map_pd(raw)
+    for it in items:
+        it["hxphotos"] = (hx or {}).get(str(it["id"]), {})
+    return items
 
 
 def load_state():

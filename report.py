@@ -313,10 +313,19 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             cls = {"运营": "s-yy", "待供应": "s-dg", "在建": "s-zj"}.get(status, "s-ot")
             badge = f'<span class="badge {cls}">{esc(status)}</span>' if status else ""
             _fylx = x.get("fylx") or []
+            _hx = x.get("hxphotos") or {}
             hx = ''
-            if _fylx:
-                hx = '<div class="dts"><div class="dt-head">户型</div>'
-                hx += '<div class="pdhz">' + ''.join(f'<span class="pdhz-chip">{esc(t)}</span>' for t in _fylx) + '</div>'
+            if _fylx or _hx:
+                hx = '<div class="dts"><div class="dt-head">户型与图片</div>'
+                if _fylx:
+                    hx += '<div class="pdhz">' + ''.join(f'<span class="pdhz-chip">{esc(t)}</span>' for t in _fylx) + '</div>'
+                for _ft, _ps in _hx.items():
+                    if not _ps:
+                        continue
+                    hx += f'<div class="pdxhx"><span class="pdxhx-t">{esc(_ft)}</span><div class="dtgrid">'
+                    for _p in _ps[:6]:
+                        hx += f'<div class="dtcard"><div class="dtthumb"><img class="pdimg" loading="lazy" src="/api/pdphoto?path={quote(_p, safe="")}"></div></div>'
+                    hx += '</div></div>'
                 hx += '</div>'
             pitems.append(
                 f'<li class="pditem" data-key="pd:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
@@ -533,6 +542,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .dtm-imgs{{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}}
  .dtm-imgs img{{width:100%;border-radius:8px;background:#f4f6fa;cursor:zoom-in}}
  .pdhz{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}}
+ .pdxhx{{margin-top:8px}}
+ .pdxhx-t{{display:inline-block;font-size:12px;color:#475569;margin-bottom:4px}}
  .pdhz-chip{{font-size:12px;background:#eef4ff;color:#1d4ed8;border-radius:12px;padding:3px 10px}}
  .pdimg{{cursor:zoom-in}}
  .imgzoom{{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;display:flex;align-items:center;justify-content:center;padding:10px;cursor:zoom-out}}
