@@ -61,6 +61,11 @@ PUSH = {"total_change": True, "district_change": False, "districts": [], "keywor
 
 ERR_SB = "__err_sb__"
 ERR_PD = "__err_pd__"
+FAIL_SB = "__fail_sb__"
+FAIL_PD = "__fail_pd__"
+NEXT_SB = "__next_sb__"
+NEXT_PD = "__next_pd__"
+NOTIFY_TOTAL = "__notify_total__"
 NOTICE_KEY = "__notices__"
 HEARTBEAT_KEY = "__last_heartbeat_hour__"
 HB_BASELINE_KEY = "__hb_baseline__"
@@ -1376,15 +1381,43 @@ def notice_heartbeat_lines(cur):
     return lines
 
 
-def notify_err(state, key, text):
-    if state.get(key) != text:
-        push(text)
-        state[key] = text
-        save_state(state)
+def _err_keys(key):
+    return (FAIL_SB, NEXT_SB) if key == ERR_SB else (FAIL_PD, NEXT_PD)
 
 
-def clear_err(state, key):
-    return state.pop(key, None) is not None
+def _mark_ok(state, key):
+    fk, nk = _err_keys(key)
+    for k in (key, fk, nk):
+        state.pop(k, None)
+
+
+def notify_err(state, key, text, is_login=False):
+    """连续失败 3 次才提醒；同一轮故障最多提醒 3 次（3/6/9 次失败时）。"""
+    fk, nk = _err_keys(key)
+    fail = int(state.get(fk, 0)) + 1
+    state[fk] = fail
+    nxt = int(state.get(nk, 3) or 3)
+    total = int(state.get(NOTIFY_TOTAL, 0))
+    if fail >= 3 and fail >= nxt and total < 3:
+        label = "随申办" if key == ERR_SB else "明珠在线"
+        kind = "无法登录" if is_login else "获取数据失败"
+        push(f"{text}\n（{label}{kind}，已连续 {fail} 次；第 {total + 1}/3 次提醒）")
+        state[nk] = fail + 3
+        state[NOTIFY_TOTAL] = total + 1
+    state[key] = text
+    save_state(state)
+
+
+def _maybe_recover(state, sb_ok, pd_ok, pd_configured):
+    healthy = sb_ok and (pd_ok or not pd_configured)
+    total = int(state.get(NOTIFY_TOTAL, 0))
+    if not healthy:
+        return
+    if total > 0:
+        push("✅ 监控已恢复正常。")
+    for k in (ERR_SB, ERR_PD, FAIL_SB, FAIL_PD, NEXT_SB, NEXT_PD, NOTIFY_TOTAL):
+        state.pop(k, None)
+    save_state(state)
 
 
 def run_once(report=False):
@@ -1403,7 +1436,7 @@ def run_once(report=False):
         notify_err(state, ERR_SB, "⚠️ 随申办当日查询次数已用完（每日上限），将于次日 00:00 恢复；监控在此期间无法更新。")
     except AuthError as e:
         print("随申办 Cookie 失效：", e)
-        notify_err(state, ERR_SB, "⚠️ 随申办登录信息已失效，请重新登录随申办抓取新的 Cookie 并更新 Secret「SSB_COOKIE」。")
+        notify_err(state, ERR_SB, "⚠️ 随申办登录信息已失效，请重新登录随申办抓取新的 Cookie 并更新 Secret「SSB_COOKIE」。", is_login=True)
     except Exception as e:
         print("随申办抓取失败：", repr(e))
         notify_err(state, ERR_SB, f"⚠️ 随申办获取数据失败：{type(e).__name__}: {e}")
@@ -1417,7 +1450,7 @@ def run_once(report=False):
             pd = fetch_pd(state)
         except PdAuthError as e:
             print("明珠在线会话失效且自动登录失败：", e)
-            notify_err(state, ERR_PD, f"⚠️ 明珠在线自动登录失败：{e}")
+            notify_err(state, ERR_PD, f"⚠️ 明珠在线自动登录失败：{e}", is_login=True)
         except Exception as e:
             print("明珠在线抓取失败：", repr(e))
             notify_err(state, ERR_PD, f"⚠️ 明珠在线获取数据失败：{type(e).__name__}: {e}")
@@ -1438,13 +1471,13 @@ def run_once(report=False):
         except Exception as e:
             print("青年安居抓取失败：", repr(e))
 
-    recovered = False
-    if cur_all is not None and clear_err(state, ERR_SB):
-        recovered = True
-    if pd_configured and pd is not None and clear_err(state, ERR_PD):
-        recovered = True
-    if recovered:
-        push("✅ 监控已恢复正常。")
+    sb_ok = cur_all is not None
+    pd_ok = (not pd_configured) or (pd is not None)
+    if sb_ok:
+        _mark_ok(state, ERR_SB)
+    if pd_configured and pd is not None:
+        _mark_ok(state, ERR_PD)
+    _maybe_recover(state, sb_ok, pd_ok, pd_configured)
 
     kw_cur = [x for x in cur_all if is_keyword(x.get("projectName"))] if cur_all is not None else None
 
