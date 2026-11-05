@@ -65,7 +65,9 @@ def save_comments(d):
 
 
 @app.get("/api/comments")
-def api_comments(key: str = ""):
+def api_comments(request: Request, key: str = ""):
+    if not _can_map(request):
+        return []
     lst = load_comments().get(key, [])
     for c in lst:
         c.setdefault("author", "admin")
@@ -233,7 +235,9 @@ def api_pditems(w: str = ""):
 
 
 @app.get("/api/doortypes")
-def api_doortypes(projectId: str = ""):
+def api_doortypes(request: Request, projectId: str = ""):
+    if not _can_map(request):
+        return {"ok": False, "need_login": True, "msg": "登录后查看房源详情"}
     pid = (projectId or "").strip()
     if not pid.isdigit():
         return {"ok": False, "msg": "缺少项目ID"}
@@ -247,7 +251,9 @@ def api_doortypes(projectId: str = ""):
 
 
 @app.get("/api/doortype_photo")
-def api_doortype_photo(fileId: str = ""):
+def api_doortype_photo(request: Request, fileId: str = ""):
+    if not _can_map(request):
+        return Response(status_code=403)
     fid = (fileId or "").strip()
     if not re.match(r"^[0-9a-fA-F-]{36}$", fid):
         return Response(status_code=400)
@@ -255,14 +261,16 @@ def api_doortype_photo(fileId: str = ""):
         data, mime = DT.photo(fid)
     except Exception:
         return Response(status_code=404)
-    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=604800"})
 
 
 PD_PHOTO_DIR = os.path.join(DATA_DIR, "pdphoto")
 
 
 @app.get("/api/pdphoto")
-def api_pdphoto(path: str = ""):
+def api_pdphoto(request: Request, path: str = ""):
+    if not _can_map(request):
+        return Response(status_code=403)
     path = (path or "").strip()
     if not re.match(r"^\d+/[^/]+$", path):
         return Response(status_code=400)
@@ -273,7 +281,7 @@ def api_pdphoto(path: str = ""):
         if os.path.exists(p):
             data = open(p, "rb").read()
             mime, _ = DT._sniff(data)
-            return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
+            return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=604800"})
     try:
         r = requests.get("https://pdrcgy.pudong.gov.cn/file",
                          params={"op": "2", "bean": "rcajImg", "path": path},
@@ -284,7 +292,7 @@ def api_pdphoto(path: str = ""):
     data = r.content
     mime, ext = DT._sniff(data)
     open(os.path.join(PD_PHOTO_DIR, key + ext), "wb").write(data)
-    return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
+    return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=604800"})
 
 
 def _sync_mon():
@@ -934,6 +942,9 @@ def _auth_page(title, body):
 def render_user_register(err="", email="", name=""):
     err_html = f'<div style="color:#dc2626;font-size:13px;margin-bottom:10px">{esc(err)}</div>' if err else ""
     body = f'''{err_html}
+<div style="background:#eff6ff;border:1px solid #bfd3ff;color:#1d4ed8;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;margin-bottom:14px">
+  <b>为什么要注册？</b><br>为防止爬虫批量抓取房源详细信息、保护数据和服务稳定，查看房源详情（图片、户型、评论等）需要登录。注册只需邮箱和密码。
+</div>
 <p class="muted" style="margin:0 0 14px">用邮箱注册。为安全与防攻击：每个 IP 每天限注册 1 个账号；暂未接入邮箱真实性验证，只校验格式与频率。</p>
 <form method="post" action="/register">
   <label class="f">邮箱</label><input name="email" type="email" value="{esc(email)}" required>

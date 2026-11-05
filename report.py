@@ -192,6 +192,13 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
         return f"<h3>{source}</h3>{body}"
 
     def all_projects(latest):
+        detail_allowed = bool(can_map)
+        gate = ('<div class="pddetail"><div class="login-gate">'
+                '<div class="lg-ico">🔒</div>'
+                '<div class="lg-title">登录后查看房源详情</div>'
+                '<div class="lg-sub">为防止爬虫批量抓取房源信息，详细数据、图片和评论仅对已登录用户开放。</div>'
+                '<div class="lg-actions"><a class="btn" href="/login">登录</a> <a class="btn ghost" href="/register">注册</a></div>'
+                '</div></div>')
         ssb = latest["ssb"]
         tag_opts = "".join(f'<label><input type="checkbox" class="sb_t" value="{esc(t)}"> {esc(t)}</label>'
                            for t in ["保障性租赁住房", "新青年就业安居"])
@@ -240,19 +247,24 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             district = x.get("district") or ""
             supply = " ~ ".join([d for d in [dday(x.get("supply_start")), dday(x.get("supply_end"))] if d]) or "—"
             accept = " ~ ".join([d for d in [dday(x.get("accept_start")), dday(x.get("accept_end"))] if d]) or "—"
-            sitems.append(
+            head = (
                 f'<li class="pditem" data-key="ssb:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-tags="{esc(tags_attr)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badges}'
                 f'<span class="pdkz">在线 {x["online"]} 套</span></span>'
                 f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
-                f'<button type="button" class="cmp-add" onclick="addCompare(event,this)">加入比较</button></span></div>'
-                f'<div class="pddetail"><div class="pdgrid">'
-                f'<div class="pdcell"><b>租金</b>{esc(price)}</div>'
-                f'<div class="pdcell"><b>户型</b>{esc("、".join(dts)) or "—"}</div>'
-                f'<div class="pdcell"><b>供应</b>{esc(supply)}</div>'
-                f'<div class="pdcell"><b>受理</b>{esc(accept)}</div>'
-                f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
-                f'</div><div class="dts" data-pid="{esc(str(x.get("id")))}"><div class="dt-head">户型与图片</div><div class="dt-body"><button type="button" class="dt-load">加载户型信息</button></div></div><div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div></li>')
+                f'<button type="button" class="cmp-add" onclick="addCompare(event,this)">加入比较</button></span></div>')
+            if detail_allowed:
+                det = (
+                    f'<div class="pddetail"><div class="pdgrid">'
+                    f'<div class="pdcell"><b>租金</b>{esc(price)}</div>'
+                    f'<div class="pdcell"><b>户型</b>{esc("、".join(dts)) or "—"}</div>'
+                    f'<div class="pdcell"><b>供应</b>{esc(supply)}</div>'
+                    f'<div class="pdcell"><b>受理</b>{esc(accept)}</div>'
+                    f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
+                    f'</div><div class="dts" data-pid="{esc(str(x.get("id")))}"><div class="dt-head">户型与图片</div><div class="dt-body"><button type="button" class="dt-load">加载户型信息</button></div></div><div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div>')
+            else:
+                det = gate
+            sitems.append(head + det + '</li>')
         ssb_items = "".join(sitems)
         pd = latest["pd"]
         metros = sorted({m.split("/")[0].strip() for x in pd for m in (x.get("metro") or []) if m})
@@ -327,20 +339,25 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                         hx += f'<div class="dtcard"><div class="dtthumb"><img class="pdimg" loading="lazy" onerror="this.parentNode.parentNode.style.display=\'none\'" src="/api/pdphoto?path={quote(_p, safe="")}"></div></div>'
                     hx += '</div></div>'
                 hx += '</div>'
-            pitems.append(
+            head = (
                 f'<li class="pditem" data-key="pd:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-metro="{esc(metro_key)}" data-status="{esc(status)}" data-fy="{esc(fyc)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badge}'
                 f'<span class="pdkz">可租 {x["kzts"]} 套</span></span>'
                 f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
-                f'<button type="button" class="cmp-add" onclick="addCompare(event,this)">加入比较</button></span></div>'
-                f'<div class="pddetail"><div class="pdgrid">'
-                f'<div class="pdcell"><b>租金</b>{esc(price) or "—"}</div>'
-                f'<div class="pdcell"><b>地铁</b>{esc(metro) or "—"}</div>'
-                f'<div class="pdcell"><b>板块</b>{esc(x.get("zone")) or "—"}</div>'
-                f'<div class="pdcell"><b>供应</b>{esc(x.get("supply_date")) or "—"}</div>'
-                f'<div class="pdcell"><b>发布</b>{esc(x.get("release_time")) or "—"}</div>'
-                f'<div class="pdcell"><b>户型</b>{esc(fylx) or "—"}</div>'
-                f'</div>{hx}<div class="cmts" data-key="pd:{esc(str(x.get("id")))}"></div></div></li>')
+                f'<button type="button" class="cmp-add" onclick="addCompare(event,this)">加入比较</button></span></div>')
+            if detail_allowed:
+                det = (
+                    f'<div class="pddetail"><div class="pdgrid">'
+                    f'<div class="pdcell"><b>租金</b>{esc(price) or "—"}</div>'
+                    f'<div class="pdcell"><b>地铁</b>{esc(metro) or "—"}</div>'
+                    f'<div class="pdcell"><b>板块</b>{esc(x.get("zone")) or "—"}</div>'
+                    f'<div class="pdcell"><b>供应</b>{esc(x.get("supply_date")) or "—"}</div>'
+                    f'<div class="pdcell"><b>发布</b>{esc(x.get("release_time")) or "—"}</div>'
+                    f'<div class="pdcell"><b>户型</b>{esc(fylx) or "—"}</div>'
+                    f'</div>{hx}<div class="cmts" data-key="pd:{esc(str(x.get("id")))}"></div></div>')
+            else:
+                det = gate
+            pitems.append(head + det + '</li>')
         pd_items = "".join(pitems)
         return ssb_filter, ssb_items, pd_filter, pd_items
 
@@ -523,6 +540,11 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .cmp-src{{font-size:10px;color:#fff;background:#9aa4b2;border-radius:5px;padding:1px 6px;margin-left:6px;white-space:nowrap}}
  .cmp-empty{{color:#999;font-size:13px;padding:32px;text-align:center}}
  .pddetail{{display:none;padding:4px 4px 14px}}
+ .login-gate{{text-align:center;padding:18px 10px;background:#f8fafc;border:1px dashed #d5dbe3;border-radius:10px;margin:8px 0}}
+ .lg-ico{{font-size:26px}}
+ .lg-title{{font-weight:600;font-size:14px;margin:4px 0}}
+ .lg-sub{{color:#8794a8;font-size:12px;line-height:1.7;margin-bottom:10px}}
+ .lg-actions{{display:flex;gap:8px;justify-content:center}}
  .pditem.open .pddetail{{display:block}}
  .pdgrid{{display:block}}
  .pdcell{{display:block;font-size:13px;color:#333;line-height:1.9;word-break:break-all}}
@@ -610,6 +632,11 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .map-lock-d{{color:#667085;font-size:13px;margin-bottom:12px}}
  .chartbox{{background:#fff;border-radius:10px;padding:14px 16px;height:340px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:10px}}
  .chartbox canvas{{width:100%!important;height:100%!important}}
+ .charts4{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:10px}}
+ .chartcard{{background:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06);min-width:0}}
+ .chart-h{{font-size:13px;font-weight:600;color:#334155;margin-bottom:8px}}
+ .charts4 .chartbox{{height:220px;padding:0;background:transparent;box-shadow:none;margin:0}}
+ @media(max-width:700px){{ .charts4{{grid-template-columns:1fr}} }}
  .trendctl{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 6px;font-size:13px;color:#667085}}
  .trendctl input[type=range]{{width:280px;max-width:60vw}}
  .muted{{color:#8794a8}}
@@ -694,42 +721,33 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <div class="note">* "可租套数"取自平台页面自带字段（kzts），不保证当前有房；显示 0 套表示该项目当前无可租房源（如已租满或尚未供应）。</div>
 
 <h2 id="sec-trend">逐日趋势</h2>
-<div class="chartbox"><canvas id="trendChart"></canvas></div>
-<div class="trendctl"><label>窗口结束：<input type="range" id="trendEnd" min="0" step="1"></label> <span id="trendLabel" class="muted"></span></div>
-<div class="note">折线图；默认最近 30 天，拖动滑块可平移窗口。</div>
+<div class="charts4">
+  <div class="chartcard"><div class="chart-h">随申办 · 项目数</div><div class="chartbox"><canvas id="trendSsb"></canvas></div></div>
+  <div class="chartcard"><div class="chart-h">随申办 · 在线房源</div><div class="chartbox"><canvas id="trendOnline"></canvas></div></div>
+  <div class="chartcard"><div class="chart-h">明珠在线 · 项目数</div><div class="chartbox"><canvas id="trendPd"></canvas></div></div>
+  <div class="chartcard"><div class="chart-h">明珠在线 · 可租套数</div><div class="chartbox"><canvas id="trendKzts"></canvas></div></div>
+</div>
+<div class="note">窗口：最近 30 天（随日期自动滑动，不提供手动调整）。</div>
 <script>
 (function(){{
   var TREND = {trend_json};
-  var cv = document.getElementById('trendChart');
-  if (!cv) return;
-  if (typeof Chart === 'undefined') {{ cv.parentNode.innerHTML = '<div class="muted">图表库加载失败，请刷新重试</div>'; return; }}
-  var chart = null;
+  var boxes = document.querySelectorAll('.chartbox');
+  if (!TREND.length) {{ boxes.forEach(function(b){{ b.innerHTML = '<div class="muted">暂无趋势数据</div>'; }}); return; }}
+  if (typeof Chart === 'undefined') {{ boxes.forEach(function(b){{ b.innerHTML = '<div class="muted">图表库加载失败，请刷新重试</div>'; }}); return; }}
   function d2(t) {{ return new Date(t + 'T00:00:00Z'); }}
-  function draw(endIdx) {{
-    if (!TREND.length) {{ cv.parentNode.innerHTML = '<div class="muted">暂无趋势数据</div>'; return; }}
-    endIdx = Math.max(0, Math.min(TREND.length - 1, endIdx));
-    var end = d2(TREND[endIdx].d);
-    var start = new Date(end.getTime() - 29 * 86400000);
-    var pts = TREND.filter(function(x) {{ var t = d2(x.d); return t >= start && t <= end; }});
-    if (!pts.length) pts = [TREND[endIdx]];
-    var labels = pts.map(function(x) {{ return x.d.slice(5); }});
-    var data = {{
-      labels: labels,
-      datasets: [
-        {{ label: '随申办项目', yAxisID: 'y1', data: pts.map(function(x) {{ return x.ssb; }}), borderColor: '#2f6fed', backgroundColor: 'rgba(47,111,237,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
-        {{ label: '随申办在线', yAxisID: 'y', data: pts.map(function(x) {{ return x.online; }}), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
-        {{ label: '明珠项目', yAxisID: 'y1', data: pts.map(function(x) {{ return x.pd; }}), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }},
-        {{ label: '明珠可租', yAxisID: 'y', data: pts.map(function(x) {{ return x.kzts; }}), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.12)', fill: false, tension: .25, borderWidth: 2, pointRadius: 2 }}
-      ]
-    }};
-    if (chart) {{ chart.data = data; chart.update(); }}
-    else {{ chart = new Chart(cv, {{ type: 'line', data: data, options: {{ responsive: true, maintainAspectRatio: false, interaction: {{ mode: 'index', intersect: false }}, plugins: {{ legend: {{ position: 'bottom' }} }}, scales: {{ y: {{ position: 'left', beginAtZero: true, title: {{ display: true, text: '套数' }} }}, y1: {{ position: 'right', beginAtZero: true, grid: {{ drawOnChartArea: false }}, title: {{ display: true, text: '项目数' }} }} }} }} }}); }}
-    var lab = document.getElementById('trendLabel');
-    if (lab) lab.textContent = pts[0].d + ' ~ ' + pts[pts.length - 1].d + '（30 天窗口）';
-  }}
-  var r = document.getElementById('trendEnd');
-  if (r) {{ r.max = Math.max(0, TREND.length - 1); r.value = TREND.length - 1; r.addEventListener('input', function() {{ draw(parseInt(r.value, 10)); }}); }}
-  draw(TREND.length - 1);
+  function fmt(d) {{ return d.toISOString().slice(0, 10); }}
+  var byDate = {{}};
+  TREND.forEach(function(x) {{ byDate[x.d] = x; }});
+  var end = d2(TREND[TREND.length - 1].d);
+  var start = new Date(end.getTime() - 29 * 86400000);
+  var labels = [], dates = [];
+  for (var i = 0; i < 30; i++) {{ var dt = new Date(start.getTime() + i * 86400000); var ds = fmt(dt); dates.push(ds); labels.push(ds.slice(5)); }}
+  function vals(k) {{ return dates.map(function(s) {{ return byDate[s] ? byDate[s][k] : null; }}); }}
+  var cfg = [['trendSsb','ssb','#2f6fed'],['trendOnline','online','#10b981'],['trendPd','pd','#f59e0b'],['trendKzts','kzts','#8b5cf6']];
+  cfg.forEach(function(c){{
+    var cv = document.getElementById(c[0]); if (!cv) return;
+    new Chart(cv, {{ type: 'line', data: {{ labels: labels, datasets: [{{ data: vals(c[1]), borderColor: c[2], backgroundColor: c[2], fill: false, tension: .25, borderWidth: 2, pointRadius: 2, spanGaps: false }}] }}, options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true, ticks: {{ maxTicksLimit: 5 }} }}, x: {{ ticks: {{ maxTicksLimit: 6 }} }} }} }} }});
+  }});
 }})();
 </script>
 <div class="icp-footer"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">苏ICP备2026080883号</a></div>
