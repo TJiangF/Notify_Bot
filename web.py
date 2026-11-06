@@ -274,25 +274,15 @@ def api_pdphoto(request: Request, path: str = ""):
     path = (path or "").strip()
     if not re.match(r"^\d+/[^/]+$", path):
         return Response(status_code=400)
-    os.makedirs(PD_PHOTO_DIR, exist_ok=True)
     key = hashlib.md5(path.encode("utf-8")).hexdigest()
     for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         p = os.path.join(PD_PHOTO_DIR, key + ext)
-        if os.path.exists(p):
+        if os.path.exists(p) and os.path.getsize(p) > 0:
             data = open(p, "rb").read()
             mime, _ = DT._sniff(data)
-            return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=604800"})
-    try:
-        r = requests.get("https://pdrcgy.pudong.gov.cn/file",
-                         params={"op": "2", "bean": "rcajImg", "path": path},
-                         headers={"user-agent": "Mozilla/5.0"}, timeout=30)
-        r.raise_for_status()
-    except Exception:
-        return Response(status_code=404)
-    data = r.content
-    mime, ext = DT._sniff(data)
-    open(os.path.join(PD_PHOTO_DIR, key + ext), "wb").write(data)
-    return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=604800"})
+            return Response(content=data, media_type=mime,
+                            headers={"Cache-Control": "private, max-age=604800"})
+    return Response(status_code=404)
 
 
 def _sync_mon():

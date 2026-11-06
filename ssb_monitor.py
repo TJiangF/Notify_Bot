@@ -5,6 +5,7 @@ import time
 import sys
 import base64
 import subprocess
+import hashlib
 from datetime import datetime, timezone, timedelta
 import requests
 
@@ -48,6 +49,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ACCOUNT_FILE = os.path.join(BASE_DIR, "data", "sb_account.json")
 PD_HX_FILE = os.path.join(BASE_DIR, "data", "pd_hxphotos.json")
 PD_HXT_FILE = os.path.join(BASE_DIR, "data", "pd_hxt.json")
+PD_PHOTO_DIR = os.path.join(BASE_DIR, "data", "pdphoto")
+PD_PHOTO_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 FORCE_HEARTBEAT = os.environ.get("SSB_FORCE_HEARTBEAT", "").lower() in ("1", "true", "yes")
 SUPPRESS_PUSH = False
 
@@ -469,19 +472,66 @@ def _sync_pd_hxphotos(session, csrf, project_ids):
     return cache.get("data") or {}
 
 
-PD_HXT_TTL = 6 * 3600
+def _pd_img_ext(data):
+    if not data:
+        return ""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8"):
+        return ".jpg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return ".gif"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return ".webp"
+    return ""
+
+
+def _pd_preload_images(paths):
+    """只补齐本地缺失的明珠图片；已存在则不发请求。"""
+    if not paths:
+        return
+    os.makedirs(PD_PHOTO_DIR, exist_ok=True)
+    for path in sorted(set(paths)):
+        key = hashlib.md5(path.encode("utf-8")).hexdigest()
+        if any(os.path.exists(os.path.join(PD_PHOTO_DIR, key + ext))
+               and os.path.getsize(os.path.join(PD_PHOTO_DIR, key + ext)) > 0
+               for ext in PD_PHOTO_EXTS):
+            continue
+        try:
+            r = requests.get("https://pdrcgy.pudong.gov.cn/file",
+                             params={"op": "2", "bean": "rcajImg", "path": path},
+                             headers={"user-agent": UA}, timeout=30)
+            if r.status_code != 200 or not r.content:
+                continue
+            ext = _pd_img_ext(r.content)
+            if not ext:
+                continue
+            with open(os.path.join(PD_PHOTO_DIR, key + ext), "wb") as f:
+                f.write(r.content)
+            time.sleep(0.2)
+        except Exception:
+            continue
+
 
 def _sync_pd_hxt(session, project_ids):
-    """从 getProjectDetail.html?id= 取 hxt（户型图），按项目缓存；6 小时。"""
+    """仅在明珠项目集合变化时更新 hxt；图片静态落盘，之后只读本地。"""
     try:
         cache = json.load(open(PD_HXT_FILE))
     except Exception:
         cache = {}
-    if cache.get("data") and time.time() - float(cache.get("ts") or 0) < PD_HXT_TTL:
+    ids = sorted({str(x) for x in (project_ids or []) if x})
+    if not ids:
         return cache.get("data") or {}
+    old_ids = cache.get("ids")
+    old_data = cache.get("data") or {}
+    if old_ids == ids and old_data:
+        return old_data
+
     data = {}
-    for pid in project_ids:
-        if not pid:
+    fetched = 0
+    for pid in ids:
+        if pid in old_data:
+            data[pid] = old_data[pid]
             continue
         try:
             r = session.get("https://pdrcgy.pudong.gov.cn/api/rcaj/getProjectDetail.html",
@@ -489,36 +539,37 @@ def _sync_pd_hxt(session, project_ids):
                             headers={"user-agent": UA, "x-requested-with": "XMLHttpRequest",
                                      "referer": PD_PAGE},
                             timeout=20)
-            if r.status_code != 200:
-                continue
-            rows = r.json().get("rows") or []
-            if not rows:
-                continue
-            hxt = rows[0].get("hxt") or ""
+            rows = (r.json().get("rows") or []) if r.status_code == 200 else []
+            hxt = (rows[0].get("hxt") or "") if rows else ""
             if not isinstance(hxt, str):
-                continue
+                hxt = ""
             paths = []
             for path in [x.strip() for x in hxt.split(",") if x.strip()]:
                 low = path.lower()
                 if path.endswith("//") or path.startswith("null/") or low.endswith(".jgp"):
                     continue
                 parts = path.split("/", 2)
-                if len(parts) >= 3 and parts[0] == parts[1] == str(pid):
+                if len(parts) >= 3 and parts[0] == parts[1] == pid:
                     path = parts[0] + "/" + parts[2]
                 if path not in paths:
                     paths.append(path)
-            if paths:
-                data[str(pid)] = paths
+            data[pid] = paths
+            fetched += 1
         except Exception:
-            continue
-    if data:
-        os.makedirs(os.path.dirname(PD_HXT_FILE), exist_ok=True)
-        tmp = PD_HXT_FILE + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump({"ts": time.time(), "data": data}, f, ensure_ascii=False)
-        os.replace(tmp, PD_HXT_FILE)
-        return data
-    return cache.get("data") or {}
+            data[pid] = []
+
+    all_paths = []
+    for paths in data.values():
+        all_paths.extend(paths)
+    _pd_preload_images(all_paths)
+
+    os.makedirs(os.path.dirname(PD_HXT_FILE), exist_ok=True)
+    tmp = PD_HXT_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"ts": time.time(), "ids": ids, "data": data}, f, ensure_ascii=False)
+    os.replace(tmp, PD_HXT_FILE)
+    print(f"PD 户型图静态更新：项目 {len(ids)}，新拉项目 {fetched}，图片路径 {len(set(all_paths))}")
+    return data
 
 
 def _pd_request(session):
