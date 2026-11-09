@@ -147,6 +147,8 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--fill-missing", action="store_true",
                     help="只补：无地铁缓存、或有最近站但暂无线路的项目")
+    ap.add_argument("--on-change", action="store_true",
+                    help="仅项目集合变化时处理新增项目；无变化不调用高德")
     ap.add_argument("--sleep", type=float, default=0.15)
     args = ap.parse_args()
 
@@ -155,6 +157,33 @@ def main():
     cache = _load(CACHE)
     pcache = cache.get("projects") or {}
     station_cache = _load(STATION_CACHE)
+    current_ids = sorted({str(x.get("id")) for x in projects if x.get("id")})
+    if args.on_change:
+        sig = cache.get("ids")
+        if sig is None:
+            cache["ids"] = current_ids
+            cache["projects"] = pcache
+            cache["built_at"] = time.time()
+            _save(CACHE, cache)
+            _save(STATION_CACHE, station_cache)
+            print("地铁签名初始化，未调用高德", flush=True)
+            return
+        old_set = {str(x) for x in sig}
+        cur_set = set(current_ids)
+        new_ids = sorted(cur_set - old_set)
+        gone_ids = sorted(old_set - cur_set)
+        for gid in gone_ids:
+            pcache.pop(gid, None)
+        cache["ids"] = current_ids
+        cache["projects"] = pcache
+        cache["built_at"] = time.time()
+        if not new_ids:
+            _save(CACHE, cache)
+            _save(STATION_CACHE, station_cache)
+            print(f"项目集合变化：下架 {len(gone_ids)}，无新增，未调用高德", flush=True)
+            return
+        projects = [x for x in projects if str(x.get("id")) in set(new_ids)]
+        print(f"项目集合变化：新增 {len(new_ids)}，开始补齐", flush=True)
 
     changed = 0
     for idx, x in enumerate(projects):
@@ -184,6 +213,7 @@ def main():
         time.sleep(args.sleep)
 
     cache["projects"] = pcache
+    cache["ids"] = current_ids
     cache["built_at"] = time.time()
     _save(CACHE, cache)
     _save(STATION_CACHE, station_cache)
