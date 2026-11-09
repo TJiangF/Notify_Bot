@@ -113,6 +113,17 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                 cur_label="当前", base_label="上一份快照", auto_refresh=0,
                 user_name="", can_map=False, logged_in=False, favorites=None,
                 is_admin=False, admin_url=""):
+    try:
+        _metro = json.load(open(os.path.join(DATA_DIR, "ssb_metro.json"))).get("projects") or {}
+    except Exception:
+        _metro = {}
+    for _x in latest.get("ssb") or []:
+        _rec = _metro.get(str(_x.get("id")))
+        if _rec:
+            _x["metro_known"] = bool(_rec.get("known"))
+            _x["metro_lines"] = _rec.get("lines") or []
+            _x["metro_near"] = _rec.get("near") or {}
+
     ssb_ch = diff(prev["ssb"], latest["ssb"], "online")
     pd_ch = diff(prev["pd"], latest["pd"], "kzts")
     ssb_dist = district_stats(latest["ssb"], ssb_ch)
@@ -206,6 +217,11 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                          for d in ["单间", "一居室", "二居室", "三居室", "多居室"])
         districts = sorted({x.get("district") for x in ssb if x.get("district")})
         dchecks = "".join(f'<label><input type="checkbox" class="sb_d" value="{esc(d)}"> {esc(d)}</label>' for d in districts)
+        sb_metro_lines = sorted(
+            {line for x in ssb for line in (x.get("metro_lines") or [])},
+            key=lambda t: (int(re.match(r"(\d+)", t).group(1)) if re.match(r"(\d+)", t) else 999, t),
+        )
+        sb_metro_opts = "".join(f'<label><input type="checkbox" class="sb_m" value="{esc(line)}"> {esc(line)}</label>' for line in sb_metro_lines)
         hmax = 0
         for x in ssb:
             h = x.get("rent_high")
@@ -220,6 +236,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             f'<div class="ms-list">{h_opts}</div></details>'
             '<details class="ms"><summary id="sb_dsum">行政区：全部</summary>'
             f'<div class="ms-list">{dchecks}</div></details>'
+            '<details class="ms"><summary id="sb_msum">地铁：全部</summary>'
+            f'<div class="ms-list">{sb_metro_opts}</div></details>'
             '<button type="button" onclick="applySb()">筛选</button>'
             '<button type="button" class="btn-reset" onclick="resetSb()">清空筛选</button>'
         )
@@ -247,8 +265,25 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             district = x.get("district") or ""
             supply = " ~ ".join([d for d in [dday(x.get("supply_start")), dday(x.get("supply_end"))] if d]) or "—"
             accept = " ~ ".join([d for d in [dday(x.get("accept_start")), dday(x.get("accept_end"))] if d]) or "—"
+            _mlines = x.get("metro_lines") or []
+            _mnear = x.get("metro_near") or {}
+            if _mlines:
+                metro_txt = "、".join(_mlines)
+                if _mnear:
+                    metro_txt += "（" + (_mnear.get("name") or "")
+                    _md = _mnear.get("dist")
+                    if _md:
+                        metro_txt += f"，约{int(_md)}m"
+                    metro_txt += "）"
+            elif _mnear and _mnear.get("name"):
+                metro_txt = (_mnear.get("name") or "") + "（线路待补）"
+            elif x.get("metro_known"):
+                metro_txt = "1.5km内无地铁"
+            else:
+                metro_txt = "—"
+            metro_attr = "、".join(_mlines)
             head = (
-                f'<li class="pditem" data-key="ssb:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-tags="{esc(tags_attr)}" data-door="{esc(door_key)}" data-d="{esc(district)}">'
+                f'<li class="pditem" data-key="ssb:{esc(str(x.get("id")))}" data-name="{esc(x["name"])}" data-pmin="{pmin}" data-pmax="{pmax}" data-tags="{esc(tags_attr)}" data-door="{esc(door_key)}" data-d="{esc(district)}" data-metro="{esc(metro_attr)}">'
                 f'<div class="pdhead"><span class="pdname">{esc(x["name"])}{badges}'
                 f'<span class="pdkz">在线 {x["online"]} 套</span></span>'
                 f'<span class="pdheadright"><span class="pdright">{esc(x.get("addr"))}　·　{esc(x.get("tel"))}</span>'
@@ -261,6 +296,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                     f'<div class="pdcell"><b>供应</b>{esc(supply)}</div>'
                     f'<div class="pdcell"><b>受理</b>{esc(accept)}</div>'
                     f'<div class="pdcell"><b>介绍</b>{esc(x.get("intro")) or "—"}</div>'
+                    f'<div class="pdcell"><b>地铁</b>{esc(metro_txt)}</div>'
                     f'</div><div class="dts" data-pid="{esc(str(x.get("id")))}"><div class="dt-head">户型与图片</div><div class="dt-body"><button type="button" class="dt-load">加载户型信息</button></div></div><div class="cmts" data-key="ssb:{esc(str(x.get("id")))}"></div></div>')
             else:
                 det = gate
@@ -778,6 +814,9 @@ function filterSb(){{
   var dset={{}}; document.querySelectorAll('.sb_d:checked').forEach(function(c){{ dset[c.value]=1; }});
   var n=Object.keys(dset).length;
   var sum=document.getElementById('sb_dsum'); if(sum) sum.textContent='行政区：'+(n?('已选 '+n+' 个'):'全部');
+  var mset={{}}; document.querySelectorAll('.sb_m:checked').forEach(function(c){{ mset[c.value]=1; }});
+  var mkeys=Object.keys(mset); var mc=mkeys.length;
+  var msum=document.getElementById('sb_msum'); if(msum) msum.textContent='地铁：'+(mc?('已选 '+mc+' 个'):'全部');
   document.querySelectorAll('#sblist .pditem').forEach(function(li){{
     var pmin=parseFloat(li.getAttribute('data-pmin'))||0, pmax=parseFloat(li.getAttribute('data-pmax'))||0;
     var okP=(pmax>=mn)&&(pmin<=mx);
@@ -786,7 +825,9 @@ function filterSb(){{
     var doors=li.getAttribute('data-door')||'';
     var okH=!hn||hkeys.some(function(t){{ return doors.indexOf(t)>=0; }});
     var okA=!n||dset[li.getAttribute('data-d')];
-    li.style.display=(okP&&okT&&okH&&okA)?'':'none';
+    var ml=(li.getAttribute('data-metro')||'').split('、');
+    var okM=!mc||mkeys.some(function(t){{ return ml.indexOf(t)>=0; }});
+    li.style.display=(okP&&okT&&okH&&okA&&okM)?'':'none';
   }});
 }}
 function applySb(){{ var w=document.getElementById('sbwrap'); if(w) w.style.display='block'; setToggle('sbwrap','收起列表 ▴'); filterSb(); }}
@@ -795,7 +836,7 @@ function setToggle(wrapId, txt){{ document.querySelectorAll('.tbtn').forEach(fun
 function resetSb(){{
   var a=document.getElementById('sb_fmin'); if(a) a.value='';
   var b=document.getElementById('sb_fmax'); if(b) b.value='';
-  document.querySelectorAll('.sb_t,.sb_h,.sb_d').forEach(function(c){{ c.checked=false; }});
+  document.querySelectorAll('.sb_t,.sb_h,.sb_d,.sb_m').forEach(function(c){{ c.checked=false; }});
   if(window.__sbRange) window.__sbRange();
   filterSb();
 }}
@@ -1158,7 +1199,7 @@ document.addEventListener('click', function(e){{
 document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.addEventListener('change', filterPd); }});
 ['pd_fmin','pd_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterPd); }});
 filterPd();
-document.querySelectorAll('.sb_t,.sb_h,.sb_d').forEach(function(c){{ c.addEventListener('change', filterSb); }});
+document.querySelectorAll('.sb_t,.sb_h,.sb_d,.sb_m').forEach(function(c){{ c.addEventListener('change', filterSb); }});
 ['sb_fmin','sb_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterSb); }});
 filterSb();
 function initAmap(){{
