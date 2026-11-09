@@ -217,7 +217,18 @@ def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat
                 out.append(ln)
         return out
 
-    def add(items, srcname, valkey, rentf, linesfn):
+    def ssb_station(x):
+        rec = ssb_metro.get(str(x.get("id"))) or {}
+        return (rec.get("near") or {}).get("name") or ""
+
+    def pd_station(x):
+        for m in (x.get("metro") or []):
+            parts = str(m).split("/", 1)
+            if len(parts) > 1 and parts[1].strip():
+                return parts[1].strip()
+        return ""
+
+    def add(items, srcname, valkey, rentf, linesfn, stationfn):
         if srcs and srcname not in srcs:
             return
         for x in items:
@@ -229,13 +240,20 @@ def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat
                 continue
             h = {"name": x.get("name"), "addr": x.get("addr"), "src": srcname,
                  "lng": c["lng"], "lat": c["lat"], "val": x.get(valkey) or 0,
-                 "rent": rentf(x), "id": x.get("id"), "lines": lines}
+                 "rent": rentf(x), "id": x.get("id"), "lines": lines,
+                 "station": stationfn(x)}
             h["dist"] = _hav_m(origin, c)
             houses.append(h)
 
-    add(cur.get("ssb", []), "随申办", "online", lambda x: f'{x.get("rent_low")}~{x.get("rent_high")}元', ssb_lines)
-    add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "", pd_lines)
+    add(cur.get("ssb", []), "随申办", "online", lambda x: f'{x.get("rent_low")}~{x.get("rent_high")}元', ssb_lines, ssb_station)
+    add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "", pd_lines, pd_station)
     houses.sort(key=lambda h: h["dist"])
+    if not origin_metro:
+        for h in houses:
+            if h.get("lines"):
+                origin_metro = {"name": h.get("station") or "", "dist": h.get("dist"),
+                                "lines": h.get("lines") or []}
+                break
     return {"ok": True, "origin": origin, "origin_metro": origin_metro,
             "houses": houses[:max(1, min(int(n), 50))]}
 
