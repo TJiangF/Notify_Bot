@@ -237,7 +237,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             '<details class="ms"><summary id="sb_dsum">行政区：全部</summary>'
             f'<div class="ms-list">{dchecks}</div></details>'
             '<details class="ms"><summary id="sb_msum">地铁：全部</summary>'
-            f'<div class="ms-list">{sb_metro_opts}</div></details>'
+            f'<div class="ms-list"><label><input type="checkbox" id="sb_m_all" checked> 全部线路</label>{sb_metro_opts}</div></details>'
             '<button type="button" onclick="applySb()">筛选</button>'
             '<button type="button" class="btn-reset" onclick="resetSb()">清空筛选</button>'
         )
@@ -438,7 +438,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             if _ln:
                 _map_lines.add(_ln)
     map_lines = sorted(_map_lines, key=lambda t: (int(re.match(r"(\d+)", t).group(1)) if re.match(r"(\d+)", t) else 999, t))
-    map_metro_opts = "".join(f'<label><input type="checkbox" class="map_metro" value="{esc(line)}" checked> {esc(line)}</label>' for line in map_lines)
+    map_metro_opts = "".join(f'<label class="map_metro_item" data-line="{esc(line)}"><input type="checkbox" class="map_metro" value="{esc(line)}"> {esc(line)}</label>' for line in map_lines)
 
     _lock_txt = "登录后点击查看地图" if not can_map else "点击查看地图"
     _lock_btn = "登录并查看" if not can_map else "点击查看地图"
@@ -454,10 +454,10 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
         '<span id="map_msg" class="muted"></span>'
         '</div>'
         '<div class="mapfilters">'
-        '<div class="mf"><b>来源</b> <label><input type="checkbox" class="map_src" value="随申办" checked> 随申办</label> <label><input type="checkbox" class="map_src" value="明珠在线" checked> 明珠在线</label></div>'
-        '<div class="mf"><b>地铁</b><details class="ms"><summary id="map_msum">全部线路</summary><div class="ms-list">'
+        '<div class="mf"><b>来源</b><label><input type="checkbox" id="map_src_all" checked> 全选</label><label><input type="checkbox" class="map_src" value="随申办"> 随申办</label><label><input type="checkbox" class="map_src" value="明珠在线"> 明珠在线</label></div>'
+        '<div class="mf"><b>地铁</b><details class="ms"><summary id="map_msum">地铁：全部</summary><div class="ms-list"><label><input type="checkbox" id="map_metro_all" checked> 全选</label>'
         + map_metro_opts +
-        '</div></details></div>'
+        '</div></details><span id="map_mrec" class="maprec"></span></div>'
         '<div class="mf"><b>数量</b><select id="map_n"><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option></select></div>'
         '</div>'
         '<div id="amap" class="amap"></div>'
@@ -659,6 +659,8 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .mf>b{{color:#475569;font-weight:600}}
  .mf select{{padding:4px 8px;border:1px solid #d5dbe3;border-radius:6px;font-size:13px;background:#fff}}
  .mapfilters .ms>summary{{padding:4px 22px 4px 8px;font-size:13px}}
+ .mapfilters .map_metro_item.rec{{background:#fff3cd;color:#8a5a00;border-radius:4px;padding:1px 4px}}
+ .maprec{{font-size:12px;color:#b45309;margin-left:4px}}
  .amap{{height:460px;border-radius:10px;margin-top:10px;background:#eef1f5}}
  .mapgate{{height:300px;border-radius:10px;margin-top:10px;background:#eef1f5;border:1px dashed #c7d0dc;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8794a8;font-size:14px;gap:6px;text-align:center}}
  .mapgate-ico{{font-size:30px}}
@@ -837,9 +839,10 @@ function filterSb(){{
   var dset={{}}; document.querySelectorAll('.sb_d:checked').forEach(function(c){{ dset[c.value]=1; }});
   var n=Object.keys(dset).length;
   var sum=document.getElementById('sb_dsum'); if(sum) sum.textContent='行政区：'+(n?('已选 '+n+' 个'):'全部');
-  var mset={{}}; document.querySelectorAll('.sb_m:checked').forEach(function(c){{ mset[c.value]=1; }});
+  var mall=document.getElementById('sb_m_all'); var mAll=mall && mall.checked;
+  var mset={{}}; if(!mAll) document.querySelectorAll('.sb_m:checked').forEach(function(c){{ mset[c.value]=1; }});
   var mkeys=Object.keys(mset); var mc=mkeys.length;
-  var msum=document.getElementById('sb_msum'); if(msum) msum.textContent='地铁：'+(mc?('已选 '+mc+' 个'):'全部');
+  var msum=document.getElementById('sb_msum'); if(msum) msum.textContent='地铁：'+(mAll?'全部':(mc?('已选 '+mc+' 个'):'未选'));
   document.querySelectorAll('#sblist .pditem').forEach(function(li){{
     var pmin=parseFloat(li.getAttribute('data-pmin'))||0, pmax=parseFloat(li.getAttribute('data-pmax'))||0;
     var okP=(pmax>=mn)&&(pmin<=mx);
@@ -849,7 +852,7 @@ function filterSb(){{
     var okH=!hn||hkeys.some(function(t){{ return doors.indexOf(t)>=0; }});
     var okA=!n||dset[li.getAttribute('data-d')];
     var ml=(li.getAttribute('data-metro')||'').split('、');
-    var okM=!mc||mkeys.some(function(t){{ return ml.indexOf(t)>=0; }});
+    var okM=mAll||(mc>0&&mkeys.some(function(t){{ return ml.indexOf(t)>=0; }}));
     li.style.display=(okP&&okT&&okH&&okA&&okM)?'':'none';
   }});
 }}
@@ -860,6 +863,7 @@ function resetSb(){{
   var a=document.getElementById('sb_fmin'); if(a) a.value='';
   var b=document.getElementById('sb_fmax'); if(b) b.value='';
   document.querySelectorAll('.sb_t,.sb_h,.sb_d,.sb_m').forEach(function(c){{ c.checked=false; }});
+  var mall=document.getElementById('sb_m_all'); if(mall) mall.checked=true;
   if(window.__sbRange) window.__sbRange();
   filterSb();
 }}
@@ -1222,7 +1226,7 @@ document.addEventListener('click', function(e){{
 document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.addEventListener('change', filterPd); }});
 ['pd_fmin','pd_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterPd); }});
 filterPd();
-document.querySelectorAll('.sb_t,.sb_h,.sb_d,.sb_m').forEach(function(c){{ c.addEventListener('change', filterSb); }});
+document.querySelectorAll('.sb_t,.sb_h,.sb_d,.sb_m,#sb_m_all').forEach(function(c){{ c.addEventListener('change', filterSb); }});
 ['sb_fmin','sb_fmax'].forEach(function(id){{ var el=document.getElementById(id); if(el) el.addEventListener('input', filterSb); }});
 filterSb();
 function initAmap(){{
@@ -1267,28 +1271,42 @@ function mapSuggest(){{
     }});
   }}).catch(function(){{ box.style.display='none'; }});
 }}
+function markMapMetro(lines, station){{
+  var items=document.querySelectorAll('.map_metro_item');
+  items.forEach(function(l){{ l.classList.remove('rec'); }});
+  var found=[];
+  items.forEach(function(l){{
+    var line=l.getAttribute('data-line');
+    if((lines||[]).indexOf(line)>=0){{ l.classList.add('rec'); found.push(line); }}
+  }});
+  var rec=document.getElementById('map_mrec');
+  if(rec) rec.textContent=found.length?('推荐：'+found.join('、')+(station?('（'+station+'）'):'')):'';
+}}
 function doFind(){{
   var q=(document.getElementById('map_q').value||'').trim();
   var msg=document.getElementById('map_msg');
   if(!mapSel && !q){{ msg.textContent='请输入地址'; return; }}
   var box=document.getElementById('map_sug'); if(box) box.style.display='none';
-  var srcs=Array.from(document.querySelectorAll('.map_src:checked')).map(function(c){{ return c.value; }});
-  if(!srcs.length){{ msg.textContent='请至少选择一个来源'; return; }}
+  var srcAllEl=document.getElementById('map_src_all'); var srcAll=srcAllEl && srcAllEl.checked;
+  var srcs=srcAll?[]:Array.from(document.querySelectorAll('.map_src:checked')).map(function(c){{ return c.value; }});
+  if(!srcAll && !srcs.length){{ msg.textContent='请至少选择一个来源'; return; }}
+  var mAllEl=document.getElementById('map_metro_all'); var mAll=mAllEl && mAllEl.checked;
   var allMetro=Array.from(document.querySelectorAll('.map_metro'));
-  var selMetro=allMetro.filter(function(c){{ return c.checked; }}).map(function(c){{ return c.value; }});
-  if(allMetro.length && !selMetro.length){{ msg.textContent='请至少选择一条地铁线路'; return; }}
-  var allMetroSel=allMetro.length>0 && selMetro.length===allMetro.length;
+  var selMetro=mAll?[]:allMetro.filter(function(c){{ return c.checked; }}).map(function(c){{ return c.value; }});
+  if(!mAll && allMetro.length && !selMetro.length){{ msg.textContent='请至少选择一条地铁线路'; return; }}
+  var allMetroSel=mAll || (allMetro.length>0 && selMetro.length===allMetro.length);
   var nEl=document.getElementById('map_n'); var limit=nEl?parseInt(nEl.value,10):10;
   var url = mapSel ? ('/api/nearby?lng='+mapSel.lng+'&lat='+mapSel.lat+'&n='+limit)
                    : ('/api/nearby?q='+encodeURIComponent(q)+'&n='+limit);
-  if(srcs.length<2) url+='&src='+encodeURIComponent(srcs.join(','));
-  if(allMetro.length && !allMetroSel) url+='&metro='+encodeURIComponent(selMetro.join(','));
+  if(!srcAll && srcs.length<2) url+='&src='+encodeURIComponent(srcs.join(','));
+  if(!allMetroSel && allMetro.length) url+='&metro='+encodeURIComponent(selMetro.join(','));
   window.__mapFound=true;
   msg.textContent='查询中…';
   fetch(url).then(function(r){{return r.json();}}).then(function(res){{
     if(!res||!res.ok){{ msg.textContent=(res&&res.msg)||'查询失败'; return; }}
     msg.textContent='找到 '+res.houses.length+' 套最近房源（按直线距离）';
     renderMapList(res.houses);
+    if(res.origin_metro) markMapMetro(res.origin_metro.lines||[], res.origin_metro.name||'');
     if(typeof AMap==='undefined'){{ msg.textContent='地图脚本未加载（检查高德Key）'; return; }}
     initAmap();
     var mp=window.__amap; if(!mp) return;
@@ -1347,11 +1365,29 @@ function renderMapList(hs){{
   el.innerHTML=h;
 }}
 function mapFilterSummary(){{
-  var all=document.querySelectorAll('.map_metro'), sel=document.querySelectorAll('.map_metro:checked');
+  var mall=document.getElementById('map_metro_all');
+  var sel=document.querySelectorAll('.map_metro:checked');
   var s=document.getElementById('map_msum');
-  if(s) s.textContent='地铁：'+(all.length&&sel.length===all.length?'全部':('已选 '+sel.length+' 条'));
+  if(s) s.textContent='地铁：'+(mall&&mall.checked?'全部':(sel.length?('已选 '+sel.length+' 条'):'未选'));
 }}
-document.querySelectorAll('.map_src,.map_metro,#map_n').forEach(function(c){{ c.addEventListener('change', function(){{ mapFilterSummary(); if(window.__mapFound) doFind(); }}); }});
+function wireAllGroup(allId,itemSel){{
+  var all=document.getElementById(allId); if(!all) return;
+  var items=Array.from(document.querySelectorAll(itemSel));
+  items.forEach(function(c){{ c.checked=false; }});
+  all.addEventListener('change', function(){{ items.forEach(function(c){{ c.checked=false; }}); }});
+  items.forEach(function(c){{
+    c.addEventListener('change', function(){{
+      if(c.checked && all.checked){{
+        all.checked=false;
+        items.forEach(function(o){{ if(o!==c) o.checked=false; }});
+      }}
+    }});
+  }});
+}}
+wireAllGroup('map_src_all','.map_src');
+wireAllGroup('map_metro_all','.map_metro');
+wireAllGroup('sb_m_all','.sb_m');
+document.querySelectorAll('.map_src,.map_metro,#map_n,#map_src_all,#map_metro_all').forEach(function(c){{ c.addEventListener('change', function(){{ mapFilterSummary(); if(window.__mapFound) doFind(); }}); }});
 mapFilterSummary();
 var mapSel=null, mapDeb=null;
 window.addEventListener('load', function(){{

@@ -101,14 +101,11 @@ def _station_lines(station, cache):
     return lines
 
 
-def nearest_metro(addr, district, station_cache):
-    c = geocode.geocode(addr, district)
-    if not c:
-        return {"known": False, "near": None, "lines": []}
+def nearest_metro_at(lng, lat, station_cache):
     try:
         r = requests.get(
             "https://restapi.amap.com/v3/place/around",
-            params={"key": AMAP_KEY, "location": f"{c['lng']},{c['lat']}",
+            params={"key": AMAP_KEY, "location": f"{lng},{lat}",
                     "radius": RADIUS, "types": "150500", "sortrule": "distance",
                     "offset": 25, "page": 1, "extensions": "base"},
             timeout=20,
@@ -120,7 +117,7 @@ def nearest_metro(addr, district, station_cache):
     except Exception:
         return None
     if not pois:
-        return {"known": True, "near": None, "lines": []}
+        return {"name": "", "dist": 0, "lines": []}
     cand = [p for p in pois
             if "出入口" not in (p.get("name") or "")
             and "号口" not in (p.get("name") or "")]
@@ -129,10 +126,19 @@ def nearest_metro(addr, district, station_cache):
     p = min(cand, key=lambda x: int(x.get("distance") or 999999))
     station = _normalize_station(p.get("name"))
     lines = _station_lines(station, station_cache)
-    dist = int(p.get("distance") or 0)
-    return {"known": True,
-            "near": {"name": station, "dist": dist, "lines": lines},
-            "lines": lines}
+    return {"name": station, "dist": int(p.get("distance") or 0), "lines": lines}
+
+
+def nearest_metro(addr, district, station_cache):
+    c = geocode.geocode(addr, district)
+    if not c:
+        return {"known": False, "near": None, "lines": []}
+    info = nearest_metro_at(c["lng"], c["lat"], station_cache)
+    if info is None:
+        return None
+    if not info.get("name"):
+        return {"known": True, "near": None, "lines": []}
+    return {"known": True, "near": info, "lines": info.get("lines") or []}
 
 
 def main():

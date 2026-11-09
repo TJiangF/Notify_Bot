@@ -21,6 +21,7 @@ import report  # noqa: E402
 import config as cfgmod  # noqa: E402
 import geocode  # noqa: E402
 import ssb_monitor as mon  # noqa: E402
+import ssb_metro_build as metro  # noqa: E402
 import users as U  # noqa: E402
 import doortypes as DT  # noqa: E402
 
@@ -109,6 +110,19 @@ def _is_admin(request):
     return bool(u and u.get("role") == "admin")
 
 
+_METRO_STATION_CACHE = None
+
+
+def _metro_station_cache():
+    global _METRO_STATION_CACHE
+    if _METRO_STATION_CACHE is None:
+        try:
+            _METRO_STATION_CACHE = metro._load(metro.STATION_CACHE)
+        except Exception:
+            _METRO_STATION_CACHE = {}
+    return _METRO_STATION_CACHE
+
+
 def _can_map(request):
     return bool(_logged_user(request) or _is_admin(request))
 
@@ -184,6 +198,11 @@ def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat
         return {"ok": False, "msg": "请输入地址"}
     if not origin:
         return {"ok": False, "msg": "地址解析失败，换个更常见的地址试试"}
+    origin_metro = None
+    try:
+        origin_metro = metro.nearest_metro_at(origin["lng"], origin["lat"], _metro_station_cache())
+    except Exception:
+        origin_metro = None
     cur = report.load_current()
     houses = []
 
@@ -217,7 +236,8 @@ def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat
     add(cur.get("ssb", []), "随申办", "online", lambda x: f'{x.get("rent_low")}~{x.get("rent_high")}元', ssb_lines)
     add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "", pd_lines)
     houses.sort(key=lambda h: h["dist"])
-    return {"ok": True, "origin": origin, "houses": houses[:max(1, min(int(n), 50))]}
+    return {"ok": True, "origin": origin, "origin_metro": origin_metro,
+            "houses": houses[:max(1, min(int(n), 50))]}
 
 
 @app.get("/api/kwcount")
