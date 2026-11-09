@@ -65,7 +65,7 @@ def _line_name(busline):
 def _station_lines(station, cache):
     if not station:
         return []
-    if station in cache:
+    if station in cache and cache[station].get("lines"):
         return cache[station].get("lines") or []
     try:
         r = requests.get(
@@ -89,13 +89,14 @@ def _station_lines(station, cache):
                 target = s
                 break
     if target is None:
-        cache[station] = {"station": "", "lines": [], "ts": time.time()}
         return []
     lines = []
     for b in target.get("buslines") or []:
         line = _line_name(b.get("name"))
         if line and line not in lines:
             lines.append(line)
+    if not lines:
+        return []
     cache[station] = {"station": target.get("name") or "", "lines": lines, "ts": time.time()}
     return lines
 
@@ -157,7 +158,8 @@ def main():
             continue
         old = pcache.get(pid)
         if old and old.get("addr") == addr and not args.force:
-            continue
+            if old.get("lines") or not (old.get("near") or {}).get("name"):
+                continue
         res = nearest_metro(addr, x.get("district") or "", station_cache)
         if res is None:
             continue
