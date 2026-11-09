@@ -810,8 +810,19 @@ def render_dashboard(request, msg=""):
 
     users_all = U.load_users()
     td = _now().strftime("%Y-%m-%d")
+    ordered = sorted(users_all.items(), key=lambda kv: (-int(kv[1].get("visits_total") or 0), kv[0]))
+    per_page = 10
+    total_users = len(ordered)
+    pages = max(1, (total_users + per_page - 1) // per_page)
+    try:
+        page = int(request.query_params.get("page", "1"))
+    except Exception:
+        page = 1
+    page = max(1, min(page, pages))
+    start = (page - 1) * per_page
+    page_users = ordered[start:start + per_page]
     urows = []
-    for email, uu in sorted(users_all.items(), key=lambda kv: -(int(kv[1].get("visits_total") or 0))):
+    for email, uu in page_users:
         vs = uu.get("visits_days") or {}
         pu = uu.get("push") or {}
         urows.append(
@@ -825,6 +836,24 @@ def render_dashboard(request, msg=""):
     users_table = "".join(urows) or '<tr><td colspan="11" class="muted">暂无用户</td></tr>'
     today_active = sum(1 for uu in users_all.values() if int((uu.get("visits_days") or {}).get(td, 0)) > 0)
 
+    pager = ""
+    if pages > 1:
+        base = request.url.path or "/admin"
+
+        def _pg(p, label, cur=False):
+            if cur:
+                return f'<span style="padding:4px 9px;border-radius:6px;background:#2563eb;color:#fff;font-size:13px">{label}</span>'
+            return f'<a href="{base}?page={p}" style="padding:4px 9px;border:1px solid #d5dbe3;border-radius:6px;color:#2563eb;text-decoration:none;background:#fff;font-size:13px">{label}</a>'
+
+        parts = []
+        parts.append(_pg(page - 1, "‹ 上一页") if page > 1 else '<span style="padding:4px 9px;color:#b8c0cc;font-size:13px">‹ 上一页</span>')
+        for pno in range(1, pages + 1):
+            parts.append(_pg(pno, str(pno), pno == page))
+        parts.append(_pg(page + 1, "下一页 ›") if page < pages else '<span style="padding:4px 9px;color:#b8c0cc;font-size:13px">下一页 ›</span>')
+        parts.append(f'<span style="color:#8794a8;font-size:13px;margin-left:4px">共 {total_users} 个账号，第 {page}/{pages} 页</span>')
+        pager = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px">' + "".join(parts) + '</div>'
+
+
     inner = f"""
 <div class="grid">
   <div class="card"><div class="k">报表今日访问</div><div class="v">{today}</div><div class="s">累计 {total} 次</div></div>
@@ -835,10 +864,11 @@ def render_dashboard(request, msg=""):
 </div>
 
 <section>
-<h2>用户管理（{len(users_all)} 个账号，今日活跃 {today_active}）</h2>
+<h2>用户管理（{total_users} 个账号，今日活跃 {today_active}）</h2>
 <div style="overflow-x:auto">
 <table><thead><tr><th>邮箱</th><th>昵称</th><th>角色</th><th>注册</th><th>访问(总)</th><th>访问(今日)</th><th>登录次数</th><th>最后活跃</th><th>对比数</th><th>推送渠道</th><th>心跳整点</th></tr></thead><tbody>{users_table}</tbody></table>
 </div>
+{pager}
 </section>
 
 <section>
