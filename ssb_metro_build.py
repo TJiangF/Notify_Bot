@@ -158,8 +158,7 @@ def main():
             continue
         old = pcache.get(pid)
         if old and old.get("addr") == addr and not args.force:
-            if old.get("lines") or not (old.get("near") or {}).get("name"):
-                continue
+            continue
         res = nearest_metro(addr, x.get("district") or "", station_cache)
         if res is None:
             continue

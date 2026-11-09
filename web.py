@@ -153,7 +153,8 @@ def api_geosuggest(request: Request, q: str = ""):
 
 
 @app.get("/api/nearby")
-def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat: float = 0.0):
+def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat: float = 0.0,
+               src: str = "", metro: str = ""):
     u = _logged_user(request)
     if not u and not _is_admin(request):
         return {"ok": False, "need_login": True, "msg": "登录后即可使用智能找房"}
@@ -164,6 +165,13 @@ def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat
                 return {"ok": False, "msg": "今日全站高德查询已达上限，请明天再试"}
             return {"ok": False, "msg": f"今日找房次数已用完（每人每天 100 次，已用 {used} 次），请明天再试"}
     q = (q or "").strip()
+    srcs = {x.strip() for x in (src or "").split(",") if x.strip()}
+    mlines = {x.strip() for x in (metro or "").split(",") if x.strip()}
+    ssb_metro = {}
+    try:
+        ssb_metro = json.load(open(os.path.join(DATA_DIR, "ssb_metro.json"))).get("projects") or {}
+    except Exception:
+        pass
     if lng and lat:
         origin = {"lng": lng, "lat": lat}
     elif q:
@@ -179,19 +187,35 @@ def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat
     cur = report.load_current()
     houses = []
 
-    def add(items, src, valkey, rentf):
+    def ssb_lines(x):
+        return (ssb_metro.get(str(x.get("id"))) or {}).get("lines") or []
+
+    def pd_lines(x):
+        out = []
+        for m in (x.get("metro") or []):
+            ln = str(m).split("/")[0].strip()
+            if ln and ln not in out:
+                out.append(ln)
+        return out
+
+    def add(items, srcname, valkey, rentf, linesfn):
+        if srcs and srcname not in srcs:
+            return
         for x in items:
+            lines = linesfn(x) or []
+            if mlines and not (set(lines) & mlines):
+                continue
             c = geocode.geocode(x.get("addr"), district=x.get("district", ""))
             if not c:
                 continue
-            h = {"name": x.get("name"), "addr": x.get("addr"), "src": src,
+            h = {"name": x.get("name"), "addr": x.get("addr"), "src": srcname,
                  "lng": c["lng"], "lat": c["lat"], "val": x.get(valkey) or 0,
-                 "rent": rentf(x), "id": x.get("id")}
+                 "rent": rentf(x), "id": x.get("id"), "lines": lines}
             h["dist"] = _hav_m(origin, c)
             houses.append(h)
 
-    add(cur.get("ssb", []), "随申办", "online", lambda x: f'{x.get("rent_low")}~{x.get("rent_high")}元')
-    add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "")
+    add(cur.get("ssb", []), "随申办", "online", lambda x: f'{x.get("rent_low")}~{x.get("rent_high")}元', ssb_lines)
+    add(cur.get("pd", []), "明珠在线", "kzts", lambda x: x.get("price") or "", pd_lines)
     houses.sort(key=lambda h: h["dist"])
     return {"ok": True, "origin": origin, "houses": houses[:max(1, min(int(n), 50))]}
 

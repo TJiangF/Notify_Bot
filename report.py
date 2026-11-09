@@ -429,6 +429,17 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     else:
         stale_banner = ""
 
+    _map_lines = set()
+    for _x in latest.get("ssb") or []:
+        _map_lines.update(_x.get("metro_lines") or [])
+    for _x in latest.get("pd") or []:
+        for _m in (_x.get("metro") or []):
+            _ln = str(_m).split("/")[0].strip()
+            if _ln:
+                _map_lines.add(_ln)
+    map_lines = sorted(_map_lines, key=lambda t: (int(re.match(r"(\d+)", t).group(1)) if re.match(r"(\d+)", t) else 999, t))
+    map_metro_opts = "".join(f'<label><input type="checkbox" class="map_metro" value="{esc(line)}" checked> {esc(line)}</label>' for line in map_lines)
+
     _lock_txt = "登录后点击查看地图" if not can_map else "点击查看地图"
     _lock_btn = "登录并查看" if not can_map else "点击查看地图"
     map_block = (
@@ -441,6 +452,13 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
         '</div>'
         '<button type="button" onclick="doFind()">找附近房源</button>'
         '<span id="map_msg" class="muted"></span>'
+        '</div>'
+        '<div class="mapfilters">'
+        '<div class="mf"><b>来源</b> <label><input type="checkbox" class="map_src" value="随申办" checked> 随申办</label> <label><input type="checkbox" class="map_src" value="明珠在线" checked> 明珠在线</label></div>'
+        '<div class="mf"><b>地铁</b><details class="ms"><summary id="map_msum">全部线路</summary><div class="ms-list">'
+        + map_metro_opts +
+        '</div></details></div>'
+        '<div class="mf"><b>数量</b><select id="map_n"><option>10</option><option>20</option><option>30</option><option>40</option><option>50</option></select></div>'
         '</div>'
         '<div id="amap" class="amap"></div>'
         '<div id="map_list" class="maplist"></div>'
@@ -636,6 +654,11 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .mapsug>div:hover{{background:#f2f6ff}}
  .mapsug .sg-n{{font-weight:600;font-size:13px}}
  .mapsug .sg-a{{color:#8794a8;font-size:12px;margin-top:1px}}
+ .mapfilters{{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;padding:8px 0 2px;font-size:13px}}
+ .mf{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
+ .mf>b{{color:#475569;font-weight:600}}
+ .mf select{{padding:4px 8px;border:1px solid #d5dbe3;border-radius:6px;font-size:13px;background:#fff}}
+ .mapfilters .ms>summary{{padding:4px 22px 4px 8px;font-size:13px}}
  .amap{{height:460px;border-radius:10px;margin-top:10px;background:#eef1f5}}
  .mapgate{{height:300px;border-radius:10px;margin-top:10px;background:#eef1f5;border:1px dashed #c7d0dc;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8794a8;font-size:14px;gap:6px;text-align:center}}
  .mapgate-ico{{font-size:30px}}
@@ -1249,8 +1272,18 @@ function doFind(){{
   var msg=document.getElementById('map_msg');
   if(!mapSel && !q){{ msg.textContent='请输入地址'; return; }}
   var box=document.getElementById('map_sug'); if(box) box.style.display='none';
-  var url = mapSel ? ('/api/nearby?lng='+mapSel.lng+'&lat='+mapSel.lat+'&n=15')
-                   : ('/api/nearby?q='+encodeURIComponent(q)+'&n=15');
+  var srcs=Array.from(document.querySelectorAll('.map_src:checked')).map(function(c){{ return c.value; }});
+  if(!srcs.length){{ msg.textContent='请至少选择一个来源'; return; }}
+  var allMetro=Array.from(document.querySelectorAll('.map_metro'));
+  var selMetro=allMetro.filter(function(c){{ return c.checked; }}).map(function(c){{ return c.value; }});
+  if(allMetro.length && !selMetro.length){{ msg.textContent='请至少选择一条地铁线路'; return; }}
+  var allMetroSel=allMetro.length>0 && selMetro.length===allMetro.length;
+  var nEl=document.getElementById('map_n'); var limit=nEl?parseInt(nEl.value,10):10;
+  var url = mapSel ? ('/api/nearby?lng='+mapSel.lng+'&lat='+mapSel.lat+'&n='+limit)
+                   : ('/api/nearby?q='+encodeURIComponent(q)+'&n='+limit);
+  if(srcs.length<2) url+='&src='+encodeURIComponent(srcs.join(','));
+  if(allMetro.length && !allMetroSel) url+='&metro='+encodeURIComponent(selMetro.join(','));
+  window.__mapFound=true;
   msg.textContent='查询中…';
   fetch(url).then(function(r){{return r.json();}}).then(function(res){{
     if(!res||!res.ok){{ msg.textContent=(res&&res.msg)||'查询失败'; return; }}
@@ -1267,7 +1300,8 @@ function doFind(){{
       var color=(h.src==='随申办')?'#2f6fed':'#f59e0b';
       var mk=new AMap.Marker({{position:[h.lng,h.lat],content:mapPin(color),offset:new AMap.Pixel(-10,-28),title:h.name}});
       var d=(h.dist<1000)?(h.dist+'米'):((h.dist/1000).toFixed(2)+'公里');
-      var info='<div style="font-size:13px;line-height:1.7;min-width:180px"><b>'+jesc(h.name)+'</b><br>'+jesc(h.addr)+'<br>来源：'+h.src+' ｜ 距离 '+d+'<br>在售/可租 '+h.val+' 套 ｜ '+jesc(h.rent||'')+'</div>';
+      var hlines=(h.lines||[]).join('、');
+      var info='<div style="font-size:13px;line-height:1.7;min-width:180px"><b>'+jesc(h.name)+'</b><br>'+jesc(h.addr)+'<br>来源：'+h.src+' ｜ 距离 '+d+'<br>在售/可租 '+h.val+' 套 ｜ '+jesc(h.rent||'')+(hlines?('<br>地铁 '+jesc(hlines)):'')+'</div>';
       mk.infoWindow=new AMap.InfoWindow({{content:info,offset:new AMap.Pixel(0,-30)}});
       mk.on('click',function(){{ mk.infoWindow.open(mp,mk.getPosition()); }});
       mk.setMap(mp);
@@ -1307,10 +1341,18 @@ function renderMapList(hs){{
     var d=(x.dist<1000)?(x.dist+' 米'):((x.dist/1000).toFixed(2)+' 公里');
     var cls=(x.src==='随申办')?'tag-sb':'tag-pd';
     var key=(x.src==='随申办'?'ssb:':'pd:')+x.id;
-    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div style="flex:1;min-width:0"><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+'</div><div class="mapactions"><button type="button" class="mapcmt-btn map-expand" data-key="'+key+'">展开完整信息</button></div><div class="mapfull" style="display:none"></div></div></div>';
+    var lines=(x.lines||[]).join('、');
+    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div style="flex:1;min-width:0"><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+(lines?(' ｜ 地铁 '+jesc(lines)):'')+'</div><div class="mapactions"><button type="button" class="mapcmt-btn map-expand" data-key="'+key+'">展开完整信息</button></div><div class="mapfull" style="display:none"></div></div></div>';
   }});
   el.innerHTML=h;
 }}
+function mapFilterSummary(){{
+  var all=document.querySelectorAll('.map_metro'), sel=document.querySelectorAll('.map_metro:checked');
+  var s=document.getElementById('map_msum');
+  if(s) s.textContent='地铁：'+(all.length&&sel.length===all.length?'全部':('已选 '+sel.length+' 条'));
+}}
+document.querySelectorAll('.map_src,.map_metro,#map_n').forEach(function(c){{ c.addEventListener('change', function(){{ mapFilterSummary(); if(window.__mapFound) doFind(); }}); }});
+mapFilterSummary();
 var mapSel=null, mapDeb=null;
 window.addEventListener('load', function(){{
   initAmap();
