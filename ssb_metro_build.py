@@ -145,6 +145,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--fill-missing", action="store_true",
+                    help="只补：无地铁缓存、或有最近站但暂无线路的项目")
     ap.add_argument("--sleep", type=float, default=0.15)
     args = ap.parse_args()
 
@@ -164,7 +166,8 @@ def main():
             continue
         old = pcache.get(pid)
         if old and old.get("addr") == addr and not args.force:
-            continue
+            if not args.fill_missing or old.get("lines") or not (old.get("near") or {}).get("name"):
+                continue
         res = nearest_metro(addr, x.get("district") or "", station_cache)
         if res is None:
             continue
