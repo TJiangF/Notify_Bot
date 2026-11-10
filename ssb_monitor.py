@@ -296,26 +296,41 @@ def _notice_upcoming(items):
 
 def fetch_notice():
     body = json.dumps({"pageNo": 1, "pageSize": 100, "param": {"noticeId": ""}}, ensure_ascii=False)
-    headers = {
-        "Origin": "https://zwdt.sh.gov.cn",
-        "Referer": "https://zwdt.sh.gov.cn/smzy/sh_zf_onething_mobile/rent-house/assurance-find",
-        "User-Agent": UA,
-        "Cookie": ACTIVE_COOKIE or COOKIE,
-    }
-    r = requests.post(NOTICE_API, headers=headers, files={"params": (None, body)}, timeout=25)
-    r.raise_for_status()
-    j = r.json()
-    if "data" not in j:
-        msg = str(j.get("message") or j.get("url") or j)
-        if "查询次数" in msg or "上限" in msg:
-            raise RateLimitError(msg)
-        raise AuthError(msg)
-    inner = j["data"]
-    if isinstance(inner, str):
-        inner = json.loads(inner)
-    res = _notice_upcoming(inner["data"].get("results", []))
-    record_usage(1, len(res))
-    return res
+    cookies = []
+    for ck in [ACTIVE_COOKIE] + SB_COOKIES + [COOKIE]:
+        ck = (ck or "").strip()
+        if ck and ck not in cookies:
+            cookies.append(ck)
+    if not cookies:
+        cookies = [""]
+    last_err = None
+    for ck in cookies:
+        headers = {
+            "Origin": "https://zwdt.sh.gov.cn",
+            "Referer": "https://zwdt.sh.gov.cn/smzy/sh_zf_onething_mobile/rent-house/assurance-find",
+            "User-Agent": UA,
+            "Cookie": ck,
+        }
+        try:
+            r = requests.post(NOTICE_API, headers=headers, files={"params": (None, body)}, timeout=25)
+            r.raise_for_status()
+            j = r.json()
+        except Exception as e:
+            last_err = AuthError(str(e))
+            continue
+        if "data" not in j:
+            msg = str(j.get("message") or j.get("url") or j)
+            if "查询次数" in msg or "上限" in msg:
+                raise RateLimitError(msg)
+            last_err = AuthError(msg)
+            continue
+        inner = j["data"]
+        if isinstance(inner, str):
+            inner = json.loads(inner)
+        res = _notice_upcoming(inner["data"].get("results", []))
+        record_usage(1, len(res))
+        return res
+    raise last_err or AuthError("预告登录失效")
 
 
 def _enc(s):
