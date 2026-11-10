@@ -15,6 +15,7 @@ import re
 import json
 import time
 import argparse
+import threading
 
 import requests
 
@@ -27,6 +28,39 @@ CACHE = os.path.join(DATA, "ssb_metro.json")
 STATION_CACHE = os.path.join(DATA, "metro_station_lines.json")
 AMAP_KEY = geocode.AMAP_WEB_KEY
 RADIUS = 1500
+
+
+AMAP_MIN_INTERVAL = float(os.environ.get("SSB_METRO_MIN_INTERVAL", "0.4"))
+_AMAP_LOCK = threading.Lock()
+_AMAP_LAST = [0.0]
+
+
+def _amap_wait():
+    with _AMAP_LOCK:
+        now = time.time()
+        wait = AMAP_MIN_INTERVAL - (now - _AMAP_LAST[0])
+        if wait > 0:
+            time.sleep(wait)
+        _AMAP_LAST[0] = time.time()
+
+
+def _amap_get(url, params, timeout=20, tries=3):
+    for i in range(max(1, tries)):
+        _amap_wait()
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            j = r.json()
+        except Exception:
+            time.sleep(1.0 * (i + 1))
+            continue
+        if j.get("status") == "1":
+            return j
+        info = str(j.get("info") or "").upper()
+        if any(x in info for x in ("QPS", "LIMIT", "EXCEED", "OVER", "QUOTA")):
+            time.sleep(1.2 * (i + 1))
+            continue
+        return None
+    return None
 
 
 def _load(path):
@@ -67,16 +101,11 @@ def _station_lines(station, cache):
         return []
     if station in cache and cache[station].get("lines"):
         return cache[station].get("lines") or []
-    try:
-        r = requests.get(
-            "https://restapi.amap.com/v3/bus/stopname",
-            params={"key": AMAP_KEY, "keywords": station, "city": "上海"},
-            timeout=20,
-        )
-        j = r.json()
-        stops = j.get("busstops") or []
-    except Exception:
+    j = _amap_get("https://restapi.amap.com/v3/bus/stopname",
+                  {"key": AMAP_KEY, "keywords": station, "city": "上海"}, timeout=20)
+    if not j:
         return []
+    stops = j.get("busstops") or []
     target = None
     for s in stops:
         nm = s.get("name") or ""
@@ -104,20 +133,13 @@ def _station_lines(station, cache):
 
 
 def nearest_metro_at(lng, lat, station_cache):
-    try:
-        r = requests.get(
-            "https://restapi.amap.com/v3/place/around",
-            params={"key": AMAP_KEY, "location": f"{lng},{lat}",
-                    "radius": RADIUS, "types": "150500", "sortrule": "distance",
-                    "offset": 25, "page": 1, "extensions": "base"},
-            timeout=20,
-        )
-        j = r.json()
-        if j.get("status") != "1":
-            return None
-        pois = j.get("pois") or []
-    except Exception:
+    j = _amap_get("https://restapi.amap.com/v3/place/around",
+                  {"key": AMAP_KEY, "location": f"{lng},{lat}",
+                   "radius": RADIUS, "types": "150500", "sortrule": "distance",
+                   "offset": 25, "page": 1, "extensions": "base"}, timeout=20)
+    if not j:
         return None
+    pois = j.get("pois") or []
     if not pois:
         return {"name": "", "dist": 0, "lines": []}
     cand = [p for p in pois
@@ -132,6 +154,7 @@ def nearest_metro_at(lng, lat, station_cache):
 
 
 def nearest_metro(addr, district, station_cache):
+    _amap_wait()
     c = geocode.geocode(addr, district)
     if not c:
         return {"known": False, "near": None, "lines": []}
