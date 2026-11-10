@@ -283,6 +283,17 @@ def fetch_qnaj():
     return ids
 
 
+def _notice_upcoming(items):
+    today = now_bj().strftime("%Y-%m-%d")
+    out = []
+    for x in items or []:
+        d = str(x.get("planSupplyDate") or x.get("supply_date") or "")[:10]
+        if d and d < today:
+            continue
+        out.append(x)
+    return out
+
+
 def fetch_notice():
     body = json.dumps({"pageNo": 1, "pageSize": 100, "param": {"noticeId": ""}}, ensure_ascii=False)
     headers = {
@@ -302,7 +313,7 @@ def fetch_notice():
     inner = j["data"]
     if isinstance(inner, str):
         inner = json.loads(inner)
-    res = inner["data"].get("results", [])
+    res = _notice_upcoming(inner["data"].get("results", []))
     record_usage(1, len(res))
     return res
 
@@ -1044,9 +1055,16 @@ def _map_pd(items):
 
 
 def _map_notice(items):
-    return [{"id": r.get("noticeId"), "name": r.get("projectName"), "addr": r.get("projectAddress"),
-             "rent": r.get("planRentLevel"), "supply_date": r.get("planSupplyDate"), "tel": r.get("contact"),
-             "org": r.get("orgName"), "intro": r.get("introduction")} for r in (items or [])]
+    today = now_bj().strftime("%Y-%m-%d")
+    out = []
+    for r in items or []:
+        d = str(r.get("planSupplyDate") or "")[:10]
+        if d and d < today:
+            continue
+        out.append({"id": r.get("noticeId"), "name": r.get("projectName"), "addr": r.get("projectAddress"),
+                    "rent": r.get("planRentLevel"), "supply_date": r.get("planSupplyDate"), "tel": r.get("contact"),
+                    "org": r.get("orgName"), "intro": r.get("introduction")})
+    return out
 
 
 def write_report(cur, pd, notice, qnaj_ids=None, daily=False):
