@@ -89,6 +89,7 @@ def _station_lines(station, cache):
                 target = s
                 break
     if target is None:
+        cache[station] = {"station": "", "lines": [], "ts": time.time()}
         return []
     lines = []
     for b in target.get("buslines") or []:
@@ -96,6 +97,7 @@ def _station_lines(station, cache):
         if line and line not in lines:
             lines.append(line)
     if not lines:
+        cache[station] = {"station": target.get("name") or "", "lines": [], "ts": time.time()}
         return []
     cache[station] = {"station": target.get("name") or "", "lines": lines, "ts": time.time()}
     return lines
@@ -185,6 +187,38 @@ def main():
         projects = [x for x in projects if str(x.get("id")) in set(new_ids)]
         print(f"项目集合变化：新增 {len(new_ids)}，开始补齐", flush=True)
 
+    if args.fill_missing:
+        cur_set = set(current_ids)
+        for pid, rec in list(pcache.items()):
+            if pid not in cur_set:
+                continue
+            name = (rec.get("near") or {}).get("name")
+            if name and not rec.get("lines"):
+                st = station_cache.get(name)
+                if st is not None and not st.get("lines"):
+                    station_cache.pop(name, None)
+        prefilled = 0
+        for pid, rec in list(pcache.items()):
+            if pid not in cur_set or rec.get("lines"):
+                continue
+            near = rec.get("near") or {}
+            name = near.get("name") or ""
+            if not name:
+                continue
+            lines = _station_lines(name, station_cache)
+            if lines:
+                near["lines"] = lines
+                rec["near"] = near
+                rec["lines"] = lines
+                prefilled += 1
+            time.sleep(args.sleep)
+        cache["projects"] = pcache
+        cache["ids"] = current_ids
+        cache["built_at"] = time.time()
+        _save(CACHE, cache)
+        _save(STATION_CACHE, station_cache)
+        print(f"补线路：{prefilled} 个项目", flush=True)
+
     changed = 0
     for idx, x in enumerate(projects):
         if args.limit and changed >= args.limit:
@@ -195,8 +229,7 @@ def main():
             continue
         old = pcache.get(pid)
         if old and old.get("addr") == addr and not args.force:
-            if not args.fill_missing or old.get("lines") or not (old.get("near") or {}).get("name"):
-                continue
+            continue
         res = nearest_metro(addr, x.get("district") or "", station_cache)
         if res is None:
             continue
