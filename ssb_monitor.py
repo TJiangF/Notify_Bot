@@ -327,7 +327,7 @@ def fetch_notice():
         inner = j["data"]
         if isinstance(inner, str):
             inner = json.loads(inner)
-        res = _notice_upcoming(inner["data"].get("results", []))
+        res = inner["data"].get("results", [])
         record_usage(1, len(res))
         return res
     raise last_err or AuthError("预告登录失效")
@@ -1070,16 +1070,9 @@ def _map_pd(items):
 
 
 def _map_notice(items):
-    today = now_bj().strftime("%Y-%m-%d")
-    out = []
-    for r in items or []:
-        d = str(r.get("planSupplyDate") or "")[:10]
-        if d and d < today:
-            continue
-        out.append({"id": r.get("noticeId"), "name": r.get("projectName"), "addr": r.get("projectAddress"),
-                    "rent": r.get("planRentLevel"), "supply_date": r.get("planSupplyDate"), "tel": r.get("contact"),
-                    "org": r.get("orgName"), "intro": r.get("introduction")})
-    return out
+    return [{"id": r.get("noticeId"), "name": r.get("projectName"), "addr": r.get("projectAddress"),
+             "rent": r.get("planRentLevel"), "supply_date": r.get("planSupplyDate"), "tel": r.get("contact"),
+             "org": r.get("orgName"), "intro": r.get("introduction")} for r in (items or [])]
 
 
 def write_report(cur, pd, notice, qnaj_ids=None, daily=False):

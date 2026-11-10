@@ -130,8 +130,6 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
     pd_dist = district_stats(latest["pd"], pd_ch)
 
     notice = latest.get("notice", [])
-    _today = datetime.now().strftime("%Y-%m-%d")
-    notice = [n for n in notice if not n.get("supply_date") or str(n["supply_date"])[:10] >= _today]
     prev_notice_ids = {str(x.get("id")) for x in prev.get("notice", [])}
     nrows = []
     for n in sorted(notice, key=lambda a: str(a.get("supply_date") or "")):
