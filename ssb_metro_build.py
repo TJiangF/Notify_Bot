@@ -106,28 +106,26 @@ def _station_lines(station, cache):
     if not j:
         return []
     stops = j.get("busstops") or []
-    target = None
+    candidates = []
     for s in stops:
-        nm = s.get("name") or ""
-        if "地铁站" in nm:
-            target = s
-            break
-    if target is None:
-        for s in stops:
-            if any((b.get("name") or "").startswith("地铁") for b in (s.get("buslines") or [])):
-                target = s
-                break
-    if target is None:
+        lines = []
+        for b in (s.get("buslines") or []):
+            line = _line_name(b.get("name"))
+            if line and line not in lines:
+                lines.append(line)
+        if lines:
+            candidates.append((s, lines))
+    if not candidates:
         cache[station] = {"station": "", "lines": [], "ts": time.time()}
         return []
-    lines = []
-    for b in target.get("buslines") or []:
-        line = _line_name(b.get("name"))
-        if line and line not in lines:
-            lines.append(line)
-    if not lines:
-        cache[station] = {"station": target.get("name") or "", "lines": [], "ts": time.time()}
-        return []
+
+    def _score(item):
+        s, lines = item
+        nm = s.get("name") or ""
+        clean = ("地铁站" in nm and "出入口" not in nm and "号口" not in nm)
+        return (1 if clean else 0, len(lines))
+
+    target, lines = max(candidates, key=_score)
     cache[station] = {"station": target.get("name") or "", "lines": lines, "ts": time.time()}
     return lines
 
