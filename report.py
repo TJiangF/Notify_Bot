@@ -451,6 +451,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
         '<div id="map_sug" class="mapsug"></div>'
         '</div>'
         '<button type="button" onclick="doFind()">找附近房源</button>'
+        '<button type="button" class="mapall" onclick="showAllMap()">显示全部</button>'
         '<span id="map_msg" class="muted"></span>'
         '</div>'
         '<div class="mapfilters">'
@@ -661,6 +662,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .mapfilters .ms>summary{{padding:4px 22px 4px 8px;font-size:13px}}
  .mapfilters .map_metro_item.rec{{background:#fff3cd;color:#8a5a00;border-radius:4px;padding:1px 4px}}
  .maprec{{font-size:12px;color:#b45309;margin-left:4px}}
+ .mapall{{background:#fff!important;color:#2563eb!important;border:1px solid #bfd3ff!important}}
+ .maproute{{display:inline-block;margin-left:8px;font-size:12px;padding:3px 10px;border:1px solid #f59e0b;color:#b45309;border-radius:12px;text-decoration:none;background:#fff}}
+ .maproute:hover{{background:#fff7e6}}
  .amap{{height:460px;border-radius:10px;margin-top:10px;background:#eef1f5}}
  .mapgate{{height:300px;border-radius:10px;margin-top:10px;background:#eef1f5;border:1px dashed #c7d0dc;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8794a8;font-size:14px;gap:6px;text-align:center}}
  .mapgate-ico{{font-size:30px}}
@@ -1238,6 +1242,8 @@ function unlockMap(){{
   var box=document.getElementById('mapbox'); if(box) box.classList.add('unlocked');
   initAmap();
   setTimeout(function(){{ if(window.__amap && window.__amap.resize) window.__amap.resize(); }}, 250);
+  window.__mapSearchMode=false;
+  loadAllMap();
 }}
 function mapPin(color){{
   return '<div style="width:20px;height:20px;border-radius:50% 50% 50% 0;background:'+color+';transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)"></div>';
@@ -1282,10 +1288,16 @@ function markMapMetro(lines, station){{
   var rec=document.getElementById('map_mrec');
   if(rec) rec.textContent=found.length?('推荐：'+found.join('、')+(station?('（'+station+'）'):'')):'';
 }}
+function routeUrl(h, origin, fromName){{
+  var from = origin ? (origin.lng+','+origin.lat+','+encodeURIComponent(fromName||'搜索地址')) : '';
+  var to = h.lng+','+h.lat+','+encodeURIComponent(((h.name||'')+' '+(h.addr||'')).trim());
+  return 'https://uri.amap.com/navigation?from='+from+'&to='+to+'&mode=car&policy=1&src=tfworks&coordinate=gaode&callnative=0';
+}}
 function doFind(){{
   var q=(document.getElementById('map_q').value||'').trim();
   var msg=document.getElementById('map_msg');
   if(!mapSel && !q){{ msg.textContent='请输入地址'; return; }}
+  var qName=mapSel ? (mapSel.name||q) : q;
   var box=document.getElementById('map_sug'); if(box) box.style.display='none';
   var srcAllEl=document.getElementById('map_src_all'); var srcAll=srcAllEl && srcAllEl.checked;
   var srcs=srcAll?[]:Array.from(document.querySelectorAll('.map_src:checked')).map(function(c){{ return c.value; }});
@@ -1301,11 +1313,12 @@ function doFind(){{
   if(!srcAll && srcs.length<2) url+='&src='+encodeURIComponent(srcs.join(','));
   if(!allMetroSel && allMetro.length) url+='&metro='+encodeURIComponent(selMetro.join(','));
   window.__mapFound=true;
+  window.__mapSearchMode=true;
   msg.textContent='查询中…';
   fetch(url).then(function(r){{return r.json();}}).then(function(res){{
     if(!res||!res.ok){{ msg.textContent=(res&&res.msg)||'查询失败'; return; }}
     msg.textContent='找到 '+res.houses.length+' 套最近房源（按直线距离）';
-    renderMapList(res.houses);
+    renderMapList(res.houses, res.origin, qName);
     if(res.origin_metro) markMapMetro(res.origin_metro.lines||[], res.origin_metro.name||'');
     if(typeof AMap==='undefined'){{ msg.textContent='地图脚本未加载（检查高德Key）'; return; }}
     initAmap();
@@ -1319,7 +1332,8 @@ function doFind(){{
       var mk=new AMap.Marker({{position:[h.lng,h.lat],content:mapPin(color),offset:new AMap.Pixel(-10,-28),title:h.name}});
       var d=(h.dist<1000)?(h.dist+'米'):((h.dist/1000).toFixed(2)+'公里');
       var hlines=(h.lines||[]).join('、');
-      var info='<div style="font-size:13px;line-height:1.7;min-width:180px"><b>'+jesc(h.name)+'</b><br>'+jesc(h.addr)+'<br>来源：'+h.src+' ｜ 距离 '+d+'<br>在售/可租 '+h.val+' 套 ｜ '+jesc(h.rent||'')+(hlines?('<br>地铁 '+jesc(hlines)):'')+'</div>';
+      var rurl=routeUrl(h, o, qName);
+      var info='<div style="font-size:13px;line-height:1.7;min-width:180px"><b>'+jesc(h.name)+'</b><br>'+jesc(h.addr)+'<br>来源：'+h.src+' ｜ 距离 '+d+'<br>在售/可租 '+h.val+' 套 ｜ '+jesc(h.rent||'')+(hlines?('<br>地铁 '+jesc(hlines)):'')+'<br><a href="'+rurl+'" target="_blank" rel="noopener" style="color:#2563eb">高德路线</a></div>';
       mk.infoWindow=new AMap.InfoWindow({{content:info,offset:new AMap.Pixel(0,-30)}});
       mk.on('click',function(){{ mk.infoWindow.open(mp,mk.getPosition()); }});
       mk.setMap(mp);
@@ -1352,7 +1366,51 @@ function mapExpand(btn,key){{
   }}
   box.style.display='block'; btn.textContent='收起完整信息';
 }}
-function renderMapList(hs){{
+function loadAllMap(){{
+  if(!CAN_MAP) return;
+  var msg=document.getElementById('map_msg');
+  var srcAllEl=document.getElementById('map_src_all'); var srcAll=srcAllEl && srcAllEl.checked;
+  var srcs=srcAll?[]:Array.from(document.querySelectorAll('.map_src:checked')).map(function(c){{ return c.value; }});
+  if(!srcAll && !srcs.length){{ msg.textContent='请至少选择一个来源'; return; }}
+  var mAllEl=document.getElementById('map_metro_all'); var mAll=mAllEl && mAllEl.checked;
+  var allMetro=Array.from(document.querySelectorAll('.map_metro'));
+  var selMetro=mAll?[]:allMetro.filter(function(c){{ return c.checked; }}).map(function(c){{ return c.value; }});
+  if(!mAll && allMetro.length && !selMetro.length){{ msg.textContent='请至少选择一条地铁线路'; return; }}
+  var allMetroSel=mAll || (allMetro.length>0 && selMetro.length===allMetro.length);
+  var url='/api/map_all'; var qs=[];
+  if(!srcAll && srcs.length<2) qs.push('src='+encodeURIComponent(srcs.join(',')));
+  if(!allMetroSel && allMetro.length) qs.push('metro='+encodeURIComponent(selMetro.join(',')));
+  if(qs.length) url+='?'+qs.join('&');
+  msg.textContent='加载全部房源…';
+  fetch(url).then(function(r){{return r.json();}}).then(function(res){{
+    if(!res||!res.ok){{ msg.textContent=(res&&res.msg)||'查询失败'; return; }}
+    renderAllMap(res.houses||[]);
+    msg.textContent='全部 '+res.houses.length+' 套房源（按来源/地铁筛选）';
+  }}).catch(function(){{ msg.textContent='查询失败'; }});
+}}
+function renderAllMap(hs){{
+  var list=document.getElementById('map_list'); if(list) list.innerHTML='';
+  if(typeof AMap==='undefined'){{ var mb=document.getElementById('map_msg'); if(mb) mb.textContent='地图脚本未加载（检查高德Key）'; return; }}
+  initAmap(); var mp=window.__amap; if(!mp) return;
+  mp.clearMap();
+  hs.forEach(function(h){{
+    var color=(h.src==='随申办')?'#2f6fed':'#f59e0b';
+    var mk=new AMap.Marker({{position:[h.lng,h.lat],content:mapPin(color),offset:new AMap.Pixel(-10,-28),title:h.name}});
+    var lines=(h.lines||[]).join('、');
+    var info='<div style="font-size:13px;line-height:1.7;min-width:180px"><b>'+jesc(h.name)+'</b><br>'+jesc(h.addr)+'<br>来源：'+h.src+(lines?('<br>地铁 '+jesc(lines)):'')+'</div>';
+    mk.infoWindow=new AMap.InfoWindow({{content:info,offset:new AMap.Pixel(0,-30)}});
+    mk.on('click',function(){{ mk.infoWindow.open(mp,mk.getPosition()); }});
+    mk.setMap(mp);
+  }});
+  if(mp.setFitView) mp.setFitView();
+}}
+function showAllMap(){{
+  mapSel=null;
+  var q=document.getElementById('map_q'); if(q) q.value='';
+  window.__mapSearchMode=false;
+  loadAllMap();
+}}
+function renderMapList(hs, origin, fromName){{
   var el=document.getElementById('map_list'); if(!el) return;
   var h='';
   hs.forEach(function(x,i){{
@@ -1360,7 +1418,8 @@ function renderMapList(hs){{
     var cls=(x.src==='随申办')?'tag-sb':'tag-pd';
     var key=(x.src==='随申办'?'ssb:':'pd:')+x.id;
     var lines=(x.lines||[]).join('、');
-    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div style="flex:1;min-width:0"><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+(lines?(' ｜ 地铁 '+jesc(lines)):'')+'</div><div class="mapactions"><button type="button" class="mapcmt-btn map-expand" data-key="'+key+'">展开完整信息</button></div><div class="mapfull" style="display:none"></div></div></div>';
+    var rurl=routeUrl(x, origin, fromName);
+    h+='<div class="mapitem"><span class="mapidx">'+(i+1)+'</span><div style="flex:1;min-width:0"><div class="mapname">'+jesc(x.name)+'<span class="maptag '+cls+'">'+x.src+'</span></div><div class="mapmeta">'+jesc(x.addr)+' ｜ 距离 '+d+' ｜ 在售/可租 '+x.val+' 套 ｜ '+jesc(x.rent||'')+(lines?(' ｜ 地铁 '+jesc(lines)):'')+'</div><div class="mapactions"><button type="button" class="mapcmt-btn map-expand" data-key="'+key+'">展开完整信息</button><a class="maproute" href="'+rurl+'" target="_blank" rel="noopener">高德路线</a></div><div class="mapfull" style="display:none"></div></div></div>';
   }});
   el.innerHTML=h;
 }}
@@ -1387,7 +1446,7 @@ function wireAllGroup(allId,itemSel){{
 wireAllGroup('map_src_all','.map_src');
 wireAllGroup('map_metro_all','.map_metro');
 wireAllGroup('sb_m_all','.sb_m');
-document.querySelectorAll('.map_src,.map_metro,#map_n,#map_src_all,#map_metro_all').forEach(function(c){{ c.addEventListener('change', function(){{ mapFilterSummary(); if(window.__mapFound) doFind(); }}); }});
+document.querySelectorAll('.map_src,.map_metro,#map_n,#map_src_all,#map_metro_all').forEach(function(c){{ c.addEventListener('change', function(){{ mapFilterSummary(); if(window.__mapSearchMode) doFind(); else loadAllMap(); }}); }});
 mapFilterSummary();
 var mapSel=null, mapDeb=null;
 window.addEventListener('load', function(){{

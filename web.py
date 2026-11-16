@@ -258,6 +258,67 @@ def api_nearby(request: Request, q: str = "", n: int = 15, lng: float = 0.0, lat
             "houses": houses[:max(1, min(int(n), 50))]}
 
 
+@app.get("/api/map_all")
+def api_map_all(request: Request, src: str = "", metro: str = ""):
+    u = _logged_user(request)
+    if not u and not _is_admin(request):
+        return {"ok": False, "need_login": True, "msg": "登录后即可使用智能找房"}
+    srcs = {x.strip() for x in (src or "").split(",") if x.strip()}
+    mlines = {x.strip() for x in (metro or "").split(",") if x.strip()}
+    ssb_metro = {}
+    coords = {}
+    try:
+        ssb_metro = json.load(open(os.path.join(DATA_DIR, "ssb_metro.json"))).get("projects") or {}
+    except Exception:
+        pass
+    try:
+        coords = json.load(open(os.path.join(DATA_DIR, "house_coords.json")))
+    except Exception:
+        pass
+    cur = report.load_current()
+    houses = []
+
+    def add(items, srcname, linesfn, stationfn):
+        if srcs and srcname not in srcs:
+            return
+        for x in items:
+            lines = linesfn(x) or []
+            if mlines and not (set(lines) & mlines):
+                continue
+            c = coords.get(f"{'ssb' if srcname == '随申办' else 'pd'}:{x.get('id')}") or {}
+            if c.get("lng") is None or c.get("lat") is None:
+                continue
+            houses.append({"name": x.get("name"), "addr": x.get("addr"), "src": srcname,
+                           "lng": c["lng"], "lat": c["lat"], "id": x.get("id"),
+                           "lines": lines, "station": stationfn(x)})
+
+    def ssb_lines(x):
+        return (ssb_metro.get(str(x.get("id"))) or {}).get("lines") or []
+
+    def ssb_station(x):
+        rec = ssb_metro.get(str(x.get("id"))) or {}
+        return (rec.get("near") or {}).get("name") or ""
+
+    def pd_lines(x):
+        out = []
+        for m in (x.get("metro") or []):
+            ln = str(m).split("/")[0].strip()
+            if ln and ln not in out:
+                out.append(ln)
+        return out
+
+    def pd_station(x):
+        for m in (x.get("metro") or []):
+            parts = str(m).split("/", 1)
+            if len(parts) > 1 and parts[1].strip():
+                return parts[1].strip()
+        return ""
+
+    add(cur.get("ssb", []), "随申办", ssb_lines, ssb_station)
+    add(cur.get("pd", []), "明珠在线", pd_lines, pd_station)
+    return {"ok": True, "houses": houses}
+
+
 @app.get("/api/kwcount")
 def api_kwcount(w: str = ""):
     w = (w or "").strip()
