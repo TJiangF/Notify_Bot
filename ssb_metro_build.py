@@ -160,8 +160,8 @@ def nearest_metro(addr, district, station_cache):
     if info is None:
         return None
     if not info.get("name"):
-        return {"known": True, "near": None, "lines": []}
-    return {"known": True, "near": info, "lines": info.get("lines") or []}
+        return {"known": True, "near": None, "lines": [], "radius": RADIUS}
+    return {"known": True, "near": info, "lines": info.get("lines") or [], "radius": RADIUS}
 
 
 def main():

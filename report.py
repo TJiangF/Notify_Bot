@@ -123,6 +123,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             _x["metro_known"] = bool(_rec.get("known"))
             _x["metro_lines"] = _rec.get("lines") or []
             _x["metro_near"] = _rec.get("near") or {}
+            _x["metro_radius"] = _rec.get("radius") or 0
 
     ssb_ch = diff(prev["ssb"], latest["ssb"], "online")
     pd_ch = diff(prev["pd"], latest["pd"], "kzts")
@@ -277,7 +278,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
                     metro_txt += "）"
             elif _mnear and _mnear.get("name"):
                 metro_txt = (_mnear.get("name") or "") + "（线路待补）"
-            elif x.get("metro_known"):
+            elif x.get("metro_known") and int(x.get("metro_radius") or 0) >= 2500:
                 metro_txt = "附近没有临近地铁线路"
             else:
                 metro_txt = "—"
