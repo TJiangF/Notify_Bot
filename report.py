@@ -278,7 +278,7 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
             elif _mnear and _mnear.get("name"):
                 metro_txt = (_mnear.get("name") or "") + "（线路待补）"
             elif x.get("metro_known"):
-                metro_txt = "1.5km内无地铁"
+                metro_txt = "附近没有临近地铁线路"
             else:
                 metro_txt = "—"
             metro_attr = "、".join(_mlines)

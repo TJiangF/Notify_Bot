@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""随申办房源 -> 最近地铁站(1.5km) + 线路，增量缓存。
+"""随申办房源 -> 最近地铁站(2.5km) + 线路，增量缓存。
 
 数据源：
 - 地址坐标：geocode.py（AMap 地理编码，data/geocache.json）
@@ -27,7 +27,7 @@ CURRENT = os.path.join(DATA, "current.json")
 CACHE = os.path.join(DATA, "ssb_metro.json")
 STATION_CACHE = os.path.join(DATA, "metro_station_lines.json")
 AMAP_KEY = geocode.AMAP_WEB_KEY
-RADIUS = 1500
+RADIUS = 2500
 
 
 AMAP_MIN_INTERVAL = float(os.environ.get("SSB_METRO_MIN_INTERVAL", "0.4"))
@@ -218,13 +218,26 @@ def main():
                 st = station_cache.get(name)
                 if st is not None and not st.get("lines"):
                     station_cache.pop(name, None)
+        items_by_id = {str(x.get("id")): x for x in (cur.get("ssb") or []) if x.get("id")}
         prefilled = 0
+        requeried = 0
         for pid, rec in list(pcache.items()):
             if pid not in cur_set or rec.get("lines"):
                 continue
             near = rec.get("near") or {}
             name = near.get("name") or ""
             if not name:
+                if rec.get("known") and pid in items_by_id:
+                    x = items_by_id[pid]
+                    res = nearest_metro(x.get("addr") or "", x.get("district") or "", station_cache)
+                    if res is not None:
+                        res["addr"] = x.get("addr") or ""
+                        res["ts"] = time.time()
+                        pcache[pid] = res
+                        if res.get("lines"):
+                            prefilled += 1
+                        requeried += 1
+                    time.sleep(args.sleep)
                 continue
             lines = _station_lines(name, station_cache)
             if lines:
@@ -238,7 +251,7 @@ def main():
         cache["built_at"] = time.time()
         _save(CACHE, cache)
         _save(STATION_CACHE, station_cache)
-        print(f"补线路：{prefilled} 个项目", flush=True)
+        print(f"补线路：{prefilled} 个项目；2.5km 重查：{requeried} 个", flush=True)
 
     changed = 0
     for idx, x in enumerate(projects):
