@@ -5,7 +5,7 @@ import json
 import glob
 import time
 import math
-import html
+import html as html_lib
 import collections
 from datetime import date, datetime
 
@@ -214,7 +214,7 @@ def main():
     source_data = {"ssb": len(new_ssb), "pd": len(new_pd)}
 
     dots = "".join(
-        f'<span class="map-dot {p["src"]}" style="left:{p["left"]}%;top:{p["top"]}%" title="{html.escape(p["name"])}"></span>'
+        f'<span class="map-dot {p["src"]}" style="left:{p["left"]}%;top:{p["top"]}%" title="{html_lib.escape(p["name"])}"></span>'
         for p in projects)
     html = PAGE
     html = html.replace("<!--SUMMARY-->", summary)
