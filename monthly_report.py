@@ -5,12 +5,14 @@ import json
 import glob
 import time
 import math
+import io
 import html as html_lib
 import collections
 from datetime import date, datetime
 
 import requests
 import geocode
+from PIL import Image, ImageDraw
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
@@ -38,7 +40,7 @@ def _num(v):
         return 0
 
 
-MAP_W, MAP_H = 1200, 820
+MAP_W, MAP_H = 1024, 800
 
 
 def _merc_y(lat):
@@ -61,7 +63,7 @@ def _fit(points):
     zoom = 8
     for z in range(11, 7, -1):
         world = 256 * (2 ** z)
-        if (maxx - minx) * world <= MAP_W * 0.92 and (maxy - miny) * world <= MAP_H * 0.88:
+        if (maxx - minx) * world <= MAP_W * 0.97 and (maxy - miny) * world <= MAP_H * 0.95:
             zoom = z
             break
     return center, zoom
@@ -148,7 +150,35 @@ def main():
                    f"&size={MAP_W}*{MAP_H}&scale=2&key=" + geocode.AMAP_WEB_KEY)
         mr = requests.get(map_url, timeout=30)
         if mr.ok and mr.headers.get("content-type", "").startswith("image"):
-            open(MAP_OUT, "wb").write(mr.content)
+            im = Image.open(io.BytesIO(mr.content)).convert("RGB")
+            W, H = im.size
+            pts = [(p["left"] / 100 * W, p["top"] / 100 * H) for p in changed]
+            draw = ImageDraw.Draw(im)
+            colors = {"ssb": (11, 92, 255), "pd": (255, 122, 0), "gone": (225, 29, 72)}
+            halos = {"ssb": (218, 228, 255), "pd": (255, 235, 214), "gone": (255, 224, 232)}
+
+            def pin(x, y, key):
+                color, halo = colors[key], halos[key]
+                r = 15
+                cx, cy = x, y - r * 1.15
+                draw.ellipse([cx - r * 2.0, cy - r * 2.0, cx + r * 2.0, cy + r * 2.0], fill=halo)
+                draw.polygon([(x - r * 0.60, y - r * 0.60), (x + r * 0.60, y - r * 0.60), (x, y)], fill="white")
+                draw.ellipse([cx - r - 3, cy - r - 3, cx + r + 3, cy + r + 3], fill="white")
+                draw.polygon([(x - r * 0.48, y - r * 0.58), (x + r * 0.48, y - r * 0.58), (x, y - 2)], fill=color)
+                draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+
+            for p, (x, y) in zip(changed, pts):
+                key = "gone" if p["kind"] == "gone" else p["src"]
+                pin(x, y, key)
+
+            if pts:
+                xs = [x for x, _ in pts]
+                ys = [y for _, y in pts]
+                pad = max(36, int(max(W, H) * 0.045))
+                box = (max(0, int(min(xs) - pad)), max(0, int(min(ys) - pad)),
+                       min(W, int(max(xs) + pad)), min(H, int(max(ys) + pad)))
+                im = im.crop(box)
+            im.save(MAP_OUT)
         else:
             print("静态地图下载失败：", mr.status_code, mr.text[:100])
     except Exception as e:
@@ -252,9 +282,6 @@ def main():
     }
     source_data = {"ssb": len(new_ssb), "pd": len(new_pd)}
 
-    dots = "".join(
-        f'<span class="map-dot {("gone" if p["kind"]=="gone" else p["src"])}" style="left:{p["left"]}%;top:{p["top"]}%" title="{html_lib.escape(p["name"])}"></span>'
-        for p in changed)
     html = PAGE
     html = html.replace("<!--SUMMARY-->", summary)
     html = html.replace("<!--KPIS-->", kpis)
@@ -269,7 +296,6 @@ def main():
     html = html.replace("<!--DIST_DATA-->", json.dumps(dist_data, ensure_ascii=False))
     html = html.replace("<!--SOURCE_DATA-->", json.dumps(source_data, ensure_ascii=False))
     html = html.replace("<!--PROJECTS_DATA-->", json.dumps(changed, ensure_ascii=False))
-    html = html.replace("<!--MAP_DOTS-->", dots)
     html = html.replace("<!--START-->", START)
     html = html.replace("<!--END-->", END)
     html = html.replace("<!--GENERATED-->", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -367,10 +393,9 @@ h2{font-size:19px;margin:0}
   <div class="section-head"><h2>变化项目地图</h2><div class="hint">地图展示 <!--MAP_COUNT--> 个变化项目（新增 + 下架）· 圆点标注</div></div>
   <div class="card">
     <div class="map-wrap map-static"><img src="/monthly/map.png" alt="上海新增房源项目地图">
-      <div class="map-dots"><!--MAP_DOTS--></div>
       <div class="map-legend"><span class="legend-dot" style="background:#0b5cff"></span>随申办新增　<span class="legend-dot" style="background:#ff7a00"></span>明珠新增　<span class="legend-dot" style="background:#e11d48"></span>下架</div>
     </div>
-    <div class="map-note">静态地图：蓝色/橙色为新增项目，灰色为下架项目；地图范围已按全部变化项目自适应。</div>
+    <div class="map-note">静态地图已把新增/下架点位直接绘制在图片中；下载该图片即自带 pin。</div>
   </div>
 </div>
 
