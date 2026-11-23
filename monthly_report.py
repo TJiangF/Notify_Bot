@@ -4,14 +4,18 @@ import os
 import json
 import glob
 import time
+import math
+import html
 import collections
 from datetime import date, datetime
 
+import requests
 import geocode
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
 OUT = os.path.join(DATA, "monthly.html")
+MAP_OUT = os.path.join(DATA, "monthly_map.png")
 START = "2026-10-21"
 END = "2026-11-21"
 
@@ -32,6 +36,19 @@ def _num(v):
         return int(round(float(v)))
     except Exception:
         return 0
+
+
+MAP_W, MAP_H, MAP_ZOOM = 1000, 560, 9
+MAP_CENTER = (121.50, 31.24)
+
+
+def _project(lng, lat):
+    world = 256 * (2 ** MAP_ZOOM)
+    x = (lng + 180) / 360 * world
+    y = (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * world
+    cx = (MAP_CENTER[0] + 180) / 360 * world
+    cy = (1 - math.log(math.tan(math.radians(MAP_CENTER[1])) + 1 / math.cos(math.radians(MAP_CENTER[1]))) / math.pi) / 2 * world
+    return 50 + (x - cx) / MAP_W * 100, 50 + (y - cy) / MAP_H * 100
 
 
 def _delta(n):
@@ -81,13 +98,29 @@ def main():
             else:
                 metric = _num(x.get("kzts"))
                 rent = x.get("price") or ""
+            left, top = _project(c["lng"], c["lat"])
             projects.append({"src": src, "id": pid, "name": x.get("name"),
                              "district": x.get("district") or "未知",
                              "addr": x.get("addr") or "", "metric": metric,
                              "rent": rent, "lng": c["lng"], "lat": c["lat"],
+                             "left": round(left, 2), "top": round(top, 2),
                              "color": color})
     try:
         json.dump(coords, open(os.path.join(DATA, "house_coords.json"), "w"), ensure_ascii=False)
+    except Exception:
+        pass
+
+    try:
+        map_url = ("https://restapi.amap.com/v3/staticmap"
+                   f"?location={MAP_CENTER[0]},{MAP_CENTER[1]}&zoom={MAP_ZOOM}"
+                   "&size=1000*560&scale=2&key=" + geocode.AMAP_WEB_KEY)
+        mr = requests.get(map_url, timeout=30)
+        if mr.ok and mr.headers.get("content-type", "").startswith("image"):
+            open(MAP_OUT, "wb").write(mr.content)
+        else:
+            print("静态地图下载失败：", mr.status_code, mr.text[:100])
+    except Exception as e:
+        print("静态地图下载失败：", repr(e))
     except Exception:
         pass
 
@@ -180,6 +213,9 @@ def main():
     }
     source_data = {"ssb": len(new_ssb), "pd": len(new_pd)}
 
+    dots = "".join(
+        f'<span class="map-dot {p["src"]}" style="left:{p["left"]}%;top:{p["top"]}%" title="{html.escape(p["name"])}"></span>'
+        for p in projects)
     html = PAGE
     html = html.replace("<!--SUMMARY-->", summary)
     html = html.replace("<!--KPIS-->", kpis)
@@ -191,6 +227,7 @@ def main():
     html = html.replace("<!--DIST_DATA-->", json.dumps(dist_data, ensure_ascii=False))
     html = html.replace("<!--SOURCE_DATA-->", json.dumps(source_data, ensure_ascii=False))
     html = html.replace("<!--PROJECTS_DATA-->", json.dumps(projects, ensure_ascii=False))
+    html = html.replace("<!--MAP_DOTS-->", dots)
     html = html.replace("<!--START-->", START)
     html = html.replace("<!--END-->", END)
     html = html.replace("<!--GENERATED-->", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -230,6 +267,13 @@ h2{font-size:19px;margin:0}
 .card{background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.06);overflow:hidden}
 .story{padding:22px 24px;font-size:14px;line-height:1.95;color:#334155}
 .story p{margin:0 0 10px}.story b{color:var(--ink)}
+.map-static{background:#eef2f7;overflow:hidden}
+.map-static img{display:block;width:100%;height:auto}
+.map-dots{position:absolute;inset:0;pointer-events:none}
+.map-dot{position:absolute;width:13px;height:13px;border-radius:50%;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 2px 8px rgba(15,23,42,.4)}
+.map-dot.ssb{background:#2563eb;box-shadow:0 0 0 4px rgba(37,99,235,.16),0 2px 8px rgba(15,23,42,.4)}
+.map-dot.pd{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.18),0 2px 8px rgba(15,23,42,.4)}
+.chart-card.full{grid-column:1/-1}
 #map{height:470px;width:100%;background:#eef2f7}
 .map-legend{position:absolute;left:14px;bottom:14px;z-index:20;background:rgba(255,255,255,.94);border-radius:10px;padding:8px 10px;font-size:12px;color:#475569;box-shadow:0 4px 16px rgba(15,23,42,.12)}
 .legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:1px}
@@ -273,18 +317,18 @@ h2{font-size:19px;margin:0}
 <div class="section">
   <div class="section-head"><h2>新增项目地图</h2><div class="hint">地图展示 <!--MAP_COUNT--> 个新增项目 · 两种颜色区分来源</div></div>
   <div class="card">
-    <div class="map-wrap"><div id="map"></div>
+    <div class="map-wrap map-static"><img src="/monthly/map.png" alt="上海新增房源项目地图">
+      <div class="map-dots"><!--MAP_DOTS--></div>
       <div class="map-legend"><span class="legend-dot" style="background:#2563eb"></span>随申办　<span class="legend-dot" style="background:#f59e0b"></span>明珠在线</div>
     </div>
-    <div class="map-note">点击标记可查看项目名称、区域、地址与当前可租/在线套数。</div>
+    <div class="map-note">静态地图：每个圆点代表一个本月新增项目，颜色区分来源；项目明细见下方卡片。</div>
   </div>
 </div>
 
 <div class="section">
   <div class="section-head"><h2>一个月走势</h2><div class="hint">每日项目数量与房源供应变化</div></div>
   <div class="chart-grid">
-    <div class="card chart-card"><div class="chart-title">项目数量走势</div><div class="chart-box"><canvas id="projectChart"></canvas></div></div>
-    <div class="card chart-card"><div class="chart-title">在线 / 可租房源走势</div><div class="chart-box"><canvas id="supplyChart"></canvas></div></div>
+    <div class="card chart-card full"><div class="chart-title">在线 / 可租房源走势</div><div class="chart-box"><canvas id="supplyChart"></canvas></div></div>
   </div>
 </div>
 
@@ -311,7 +355,6 @@ h2{font-size:19px;margin:0}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://webapi.amap.com/maps?v=1.4.15&key=c226df9a44846d549b4f1689ece31e5"></script>
 <script>
 const TREND = <!--TREND_DATA-->;
 const DIST = <!--DIST_DATA-->;
@@ -319,10 +362,6 @@ const SOURCE = <!--SOURCE_DATA-->;
 const PROJECTS = <!--PROJECTS_DATA-->;
 Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif';
 Chart.defaults.color = '#64748b';
-new Chart(document.getElementById('projectChart'), {type:'line',data:{labels:TREND.labels,datasets:[
- {label:'随申办项目',data:TREND.ssb,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.10)',fill:true,tension:.3,borderWidth:2,pointRadius:0},
- {label:'明珠在线项目',data:TREND.pd,borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,.10)',fill:true,tension:.3,borderWidth:2,pointRadius:0}
-]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}}},scales:{x:{ticks:{maxTicksLimit:7,font:{size:10}}},y:{beginAtZero:true,ticks:{maxTicksLimit:5,font:{size:10}}}}}});
 new Chart(document.getElementById('supplyChart'), {type:'line',data:{labels:TREND.labels,datasets:[
  {label:'随申办在线',data:TREND.online,borderColor:'#0f9d58',backgroundColor:'rgba(15,157,88,.08)',fill:true,tension:.3,borderWidth:2,pointRadius:0,yAxisID:'y'},
  {label:'明珠可租',data:TREND.kzts,borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.08)',fill:true,tension:.3,borderWidth:2,pointRadius:0,yAxisID:'y1'}
@@ -332,20 +371,6 @@ new Chart(document.getElementById('districtChart'), {type:'bar',data:{labels:DIS
  {label:'明珠在线',data:DIST.pd,backgroundColor:'#f59e0b',borderRadius:4}
 ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}}},scales:{x:{stacked:true,ticks:{font:{size:10}}},y:{stacked:true,beginAtZero:true,ticks:{maxTicksLimit:5,font:{size:10}}}}}});
 new Chart(document.getElementById('sourceChart'), {type:'doughnut',data:{labels:['随申办','明珠在线'],datasets:[{data:[SOURCE.ssb,SOURCE.pd],backgroundColor:['#2563eb','#f59e0b'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}}}}});
-(function(){
-  var el=document.getElementById('map'); if(!el || typeof AMap==='undefined') return;
-  var map=new AMap.Map('map',{zoom:10,center:[121.4737,31.2304]});
-  function pin(color){return '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:'+color+';transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 2px 7px rgba(15,23,42,.35)"></div>';}
-  PROJECTS.forEach(function(p){
-    var color=p.src==='ssb'?'#2563eb':'#f59e0b';
-    var mk=new AMap.Marker({position:[p.lng,p.lat],content:pin(color),offset:new AMap.Pixel(-11,-30),title:p.name});
-    var info='<div style="font-size:13px;line-height:1.8;min-width:200px"><b>'+p.name+'</b><br>'+p.district+'　'+p.addr+'<br>来源：'+(p.src==='ssb'?'随申办':'明珠在线')+'<br>当前：'+p.metric+' 套'+(p.src==='ssb'?'在线':'可租')+(p.rent?('<br>'+p.rent):'')+'</div>';
-    mk.infoWindow=new AMap.InfoWindow({content:info,offset:new AMap.Pixel(0,-30)});
-    mk.on('click',function(){mk.infoWindow.open(map,mk.getPosition());});
-    mk.setMap(map);
-  });
-  if(PROJECTS.length && map.setFitView) map.setFitView();
-})();
 </script>
 </body></html>
 '''

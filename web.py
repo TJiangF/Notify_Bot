@@ -989,6 +989,14 @@ def render_dashboard(request, msg=""):
     return _shell(inner, request)
 
 
+@app.get("/monthly/map.png")
+def monthly_map_image():
+    p = os.path.join(DATA_DIR, "monthly_map.png")
+    if not os.path.exists(p):
+        return Response(status_code=404)
+    return Response(content=open(p, "rb").read(), media_type="image/png")
+
+
 @app.get("/monthly", response_class=HTMLResponse)
 def monthly_report_page():
     p = os.path.join(DATA_DIR, "monthly.html")
