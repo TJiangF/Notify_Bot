@@ -989,6 +989,14 @@ def render_dashboard(request, msg=""):
     return _shell(inner, request)
 
 
+@app.get("/monthly", response_class=HTMLResponse)
+def monthly_report_page():
+    p = os.path.join(DATA_DIR, "monthly.html")
+    if not os.path.exists(p):
+        return HTMLResponse("<h1>月报生成中，请稍后再试</h1>", status_code=404)
+    return HTMLResponse(open(p).read())
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin(request: Request):
     if not _is_admin(request):
