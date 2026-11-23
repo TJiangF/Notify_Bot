@@ -38,7 +38,7 @@ def _num(v):
         return 0
 
 
-MAP_W, MAP_H = 1100, 700
+MAP_W, MAP_H = 1200, 820
 
 
 def _merc_y(lat):
@@ -61,7 +61,7 @@ def _fit(points):
     zoom = 8
     for z in range(11, 7, -1):
         world = 256 * (2 ** z)
-        if (maxx - minx) * world <= MAP_W * 0.86 and (maxy - miny) * world <= MAP_H * 0.80:
+        if (maxx - minx) * world <= MAP_W * 0.92 and (maxy - miny) * world <= MAP_H * 0.88:
             zoom = z
             break
     return center, zoom
@@ -287,10 +287,10 @@ PAGE = r'''<!DOCTYPE html>
 <title>上海保租房月报 · <!--START--> 至 <!--END--></title>
 <meta name="description" content="过去一个月，随申办与明珠在线房源变化一览：新增项目地图、项目数量走势、在线与可租变化、区域分布。">
 <style>
-:root{--ink:#0f172a;--muted:#64748b;--line:#e6eaf0;--blue:#2563eb;--orange:#f59e0b;--bg:#f5f7fa}
+:root{--ink:#0f172a;--muted:#64748b;--line:#e6eaf0;--blue:#0b5cff;--orange:#ff7a00;--red:#e11d48;--bg:#f5f7fa}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
-.wrap{max-width:1120px;margin:0 auto;padding:0 18px 40px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 18px 40px}
 .hero{background:linear-gradient(135deg,#0f2b5b 0%,#184a8c 55%,#1f6fb2 100%);color:#fff;border-radius:0 0 28px 28px;padding:42px 0 54px;margin-bottom:-34px}
 .hero .wrap{padding-bottom:0}
 .tag{display:inline-block;font-size:12px;letter-spacing:.14em;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:6px 12px;border-radius:999px}
@@ -312,9 +312,9 @@ h2{font-size:19px;margin:0}
 .map-static{background:#eef2f7;overflow:hidden}
 .map-static img{display:block;width:100%;height:auto}
 .map-dots{position:absolute;inset:0;pointer-events:none}
-.map-dot{position:absolute;width:13px;height:13px;border-radius:50%;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 2px 8px rgba(15,23,42,.4)}
-.map-dot.ssb{background:#2563eb;box-shadow:0 0 0 4px rgba(37,99,235,.16),0 2px 8px rgba(15,23,42,.4)}
-.map-dot.pd{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.18),0 2px 8px rgba(15,23,42,.4)}
+.map-dot{position:absolute;width:16px;height:16px;border-radius:50%;border:2.5px solid #fff;transform:translate(-50%,-50%);box-shadow:0 2px 9px rgba(15,23,42,.45)}
+.map-dot.ssb{background:#0b5cff;box-shadow:0 0 0 5px rgba(11,92,255,.20),0 2px 9px rgba(15,23,42,.45)}
+.map-dot.pd{background:#ff7a00;box-shadow:0 0 0 5px rgba(255,122,0,.22),0 2px 9px rgba(15,23,42,.45)}
 .chart-card.full{grid-column:1/-1}
 #map{height:470px;width:100%;background:#eef2f7}
 .map-legend{position:absolute;left:14px;bottom:14px;z-index:20;background:rgba(255,255,255,.94);border-radius:10px;padding:8px 10px;font-size:12px;color:#475569;box-shadow:0 4px 16px rgba(15,23,42,.12)}
@@ -326,12 +326,12 @@ h2{font-size:19px;margin:0}
 .chart-title{font-size:13px;font-weight:650;color:#334155;margin:0 0 8px}
 .chart-box{height:230px}
 .new-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:16px}
-.new-grid.small{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;padding:12px}
+.new-grid.small{grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px;padding:12px}
 .new-grid.small .new-card{padding:9px}
 .new-grid.small .new-name{font-size:12px;min-height:34px}
 .subhead{font-size:14px;font-weight:650;margin:14px 0 8px;color:#334155}
 .subhead span{display:inline-block;background:#eef4ff;color:#2563eb;border-radius:999px;font-size:11px;padding:2px 8px;margin-left:4px}
-.map-dot.gone{background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.18),0 2px 8px rgba(15,23,42,.35)}
+.map-dot.gone{background:#e11d48;box-shadow:0 0 0 4px rgba(225,29,72,.18),0 2px 9px rgba(15,23,42,.45)}
 .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .new-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff;min-width:0}
 .new-top{display:flex;justify-content:space-between;align-items:center;gap:6px}
@@ -349,8 +349,8 @@ h2{font-size:19px;margin:0}
 .gone-item b{font-weight:600;color:#334155}.gone-item span{color:var(--muted);font-size:12px}.gone-item em{margin-left:auto;font-style:normal;color:#94a3b8;font-size:12px}
 .footer{text-align:center;color:#94a3b8;font-size:11px;line-height:1.8;padding:30px 0 0}
 .footer a{color:#94a3b8}
-@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.new-grid{grid-template-columns:repeat(3,1fr)}.new-grid.small{grid-template-columns:repeat(4,1fr)}.chart-grid{grid-template-columns:1fr}}
-@media(max-width:600px){h1{font-size:26px}.kpis{grid-template-columns:1fr 1fr}.new-grid,.new-grid.small{grid-template-columns:1fr 1fr}.new-name{min-height:auto}}
+@media(max-width:900px){.wrap{max-width:100%;padding:0 12px 28px}.hero{padding:30px 0 44px;border-radius:0 0 20px 20px}h1{font-size:28px}.sub{font-size:13px}.kpis{grid-template-columns:repeat(2,1fr);gap:8px}.kpi{padding:11px 12px}.kpi-num{font-size:22px}.new-grid{grid-template-columns:repeat(3,1fr)}.new-grid.small{grid-template-columns:repeat(3,1fr)}.chart-grid{grid-template-columns:1fr}.chart-box{height:220px}.section{margin-top:22px}}
+@media(max-width:600px){.wrap{padding:0 10px 24px}.hero{padding:24px 0 38px}h1{font-size:24px;line-height:1.25}.tag{font-size:10px}.kpis{grid-template-columns:1fr 1fr}.kpi-label{font-size:11px}.kpi-num{font-size:20px}.kpi-delta{font-size:10px}.new-grid,.new-grid.small{grid-template-columns:1fr 1fr}.new-name{font-size:11px;min-height:auto}.new-card{padding:8px}.new-addr,.new-rent{font-size:9px}.chart-box{height:200px}.map-note{font-size:10px}.section-head{flex-direction:column;align-items:flex-start;gap:2px}h2{font-size:17px}.hint{font-size:10px}.story{padding:16px 14px;font-size:13px;line-height:1.85}}
 </style>
 </head>
 <body>
@@ -368,7 +368,7 @@ h2{font-size:19px;margin:0}
   <div class="card">
     <div class="map-wrap map-static"><img src="/monthly/map.png" alt="上海新增房源项目地图">
       <div class="map-dots"><!--MAP_DOTS--></div>
-      <div class="map-legend"><span class="legend-dot" style="background:#2563eb"></span>随申办新增　<span class="legend-dot" style="background:#f59e0b"></span>明珠新增　<span class="legend-dot" style="background:#94a3b8"></span>下架</div>
+      <div class="map-legend"><span class="legend-dot" style="background:#0b5cff"></span>随申办新增　<span class="legend-dot" style="background:#ff7a00"></span>明珠新增　<span class="legend-dot" style="background:#e11d48"></span>下架</div>
     </div>
     <div class="map-note">静态地图：蓝色/橙色为新增项目，灰色为下架项目；地图范围已按全部变化项目自适应。</div>
   </div>
@@ -413,9 +413,9 @@ const SOURCE = <!--SOURCE_DATA-->;
 const PROJECTS = <!--PROJECTS_DATA-->;
 Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif';
 Chart.defaults.color = '#64748b';
-new Chart(document.getElementById('changeChart'), {type:'bar',data:{labels:TREND.labels,datasets:[
- {label:'随申办净增',data:TREND.ssb_change,backgroundColor:'#2563eb',borderRadius:3},
- {label:'明珠在线净增',data:TREND.pd_change,backgroundColor:'#f59e0b',borderRadius:3}
+new Chart(document.getElementById('changeChart'), {type:'line',data:{labels:TREND.labels,datasets:[
+ {label:'随申办净增',data:TREND.ssb_change,borderColor:'#0b5cff',backgroundColor:'rgba(11,92,255,.08)',fill:false,tension:.25,borderWidth:2.5,pointRadius:2.5,pointBackgroundColor:'#0b5cff'},
+ {label:'明珠在线净增',data:TREND.pd_change,borderColor:'#ff7a00',backgroundColor:'rgba(255,122,0,.08)',fill:false,tension:.25,borderWidth:2.5,pointRadius:2.5,pointBackgroundColor:'#ff7a00'}
 ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}}},scales:{x:{ticks:{maxTicksLimit:8,font:{size:10}}},y:{beginAtZero:true,ticks:{maxTicksLimit:5,font:{size:10}}}}}});
 new Chart(document.getElementById('supplyChart'), {type:'line',data:{labels:TREND.labels,datasets:[
  {label:'随申办在线',data:TREND.online,borderColor:'#0f9d58',backgroundColor:'rgba(15,157,88,.08)',fill:true,tension:.3,borderWidth:2,pointRadius:0,yAxisID:'y'},
