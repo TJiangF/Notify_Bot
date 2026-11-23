@@ -38,16 +38,41 @@ def _num(v):
         return 0
 
 
-MAP_W, MAP_H, MAP_ZOOM = 1000, 560, 9
-MAP_CENTER = (121.50, 31.24)
+MAP_W, MAP_H = 1100, 700
 
 
-def _project(lng, lat):
-    world = 256 * (2 ** MAP_ZOOM)
+def _merc_y(lat):
+    return (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2
+
+
+def _unmerc_y(y):
+    return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y))))
+
+
+def _fit(points):
+    if not points:
+        return (121.50, 31.24), 9
+    xs, ys = [], []
+    for lng, lat in points:
+        xs.append((lng + 180) / 360)
+        ys.append(_merc_y(lat))
+    minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+    center = ((minx + maxx) / 2 * 360 - 180, _unmerc_y((miny + maxy) / 2))
+    zoom = 8
+    for z in range(11, 7, -1):
+        world = 256 * (2 ** z)
+        if (maxx - minx) * world <= MAP_W * 0.86 and (maxy - miny) * world <= MAP_H * 0.80:
+            zoom = z
+            break
+    return center, zoom
+
+
+def _project(lng, lat, center, zoom):
+    world = 256 * (2 ** zoom)
     x = (lng + 180) / 360 * world
-    y = (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * world
-    cx = (MAP_CENTER[0] + 180) / 360 * world
-    cy = (1 - math.log(math.tan(math.radians(MAP_CENTER[1])) + 1 / math.cos(math.radians(MAP_CENTER[1]))) / math.pi) / 2 * world
+    y = _merc_y(lat) * world
+    cx = (center[0] + 180) / 360 * world
+    cy = _merc_y(center[1]) * world
     return 50 + (x - cx) / MAP_W * 100, 50 + (y - cy) / MAP_H * 100
 
 
@@ -76,9 +101,10 @@ def main():
     dist_gone = collections.Counter((x.get("district") or "未知") for x in gone_ssb + gone_pd)
     dist_order = [d for d, _ in dist_new.most_common()]
 
-    # 补地图坐标（仅新增项目；缺少坐标的地址补一次）
-    projects = []
-    for src, items, color in (("ssb", new_ssb, "blue"), ("pd", new_pd, "orange")):
+    # 所有“变化项目”：新增 + 下架；地图按所有点自适应范围
+    changed = []
+
+    def add_points(src, items, kind):
         for x in items:
             pid = str(x.get("id"))
             key = f"{src}:{pid}"
@@ -86,25 +112,31 @@ def main():
             if c.get("lng") is None:
                 c = geocode.geocode(x.get("addr") or "", x.get("district") or "")
                 if c:
-                    coords[key] = {"addr": x.get("addr"),
-                                   "lng": c["lng"], "lat": c["lat"]}
-                    time.sleep(0.15)
+                    coords[key] = {"addr": x.get("addr"), "lng": c["lng"], "lat": c["lat"]}
+                    time.sleep(0.12)
             if c.get("lng") is None:
                 continue
-            if src == "ssb":
-                metric = _num(x.get("online"))
-                rent = (f'{x.get("rent_low")}–{x.get("rent_high")} 元'
-                        if x.get("rent_low") is not None else "")
-            else:
-                metric = _num(x.get("kzts"))
-                rent = x.get("price") or ""
-            left, top = _project(c["lng"], c["lat"])
-            projects.append({"src": src, "id": pid, "name": x.get("name"),
-                             "district": x.get("district") or "未知",
-                             "addr": x.get("addr") or "", "metric": metric,
-                             "rent": rent, "lng": c["lng"], "lat": c["lat"],
-                             "left": round(left, 2), "top": round(top, 2),
-                             "color": color})
+            is_pd = src == "pd"
+            metric = _num(x.get("kzts") if is_pd else x.get("online"))
+            rent = (x.get("price") if is_pd else
+                    (f'{x.get("rent_low")}–{x.get("rent_high")} 元'
+                     if x.get("rent_low") is not None else ""))
+            changed.append({"src": src, "id": pid, "name": x.get("name"),
+                            "district": x.get("district") or "未知",
+                            "addr": x.get("addr") or "", "metric": metric,
+                            "rent": rent, "lng": c["lng"], "lat": c["lat"],
+                            "kind": kind})
+
+    add_points("ssb", new_ssb, "new")
+    add_points("pd", new_pd, "new")
+    add_points("ssb", gone_ssb, "gone")
+    add_points("pd", gone_pd, "gone")
+
+    center, zoom = _fit([(p["lng"], p["lat"]) for p in changed])
+    for p in changed:
+        left, top = _project(p["lng"], p["lat"], center, zoom)
+        p["left"], p["top"] = round(left, 2), round(top, 2)
+
     try:
         json.dump(coords, open(os.path.join(DATA, "house_coords.json"), "w"), ensure_ascii=False)
     except Exception:
@@ -112,8 +144,8 @@ def main():
 
     try:
         map_url = ("https://restapi.amap.com/v3/staticmap"
-                   f"?location={MAP_CENTER[0]},{MAP_CENTER[1]}&zoom={MAP_ZOOM}"
-                   "&size=1000*560&scale=2&key=" + geocode.AMAP_WEB_KEY)
+                   f"?location={center[0]},{center[1]}&zoom={zoom}"
+                   f"&size={MAP_W}*{MAP_H}&scale=2&key=" + geocode.AMAP_WEB_KEY)
         mr = requests.get(map_url, timeout=30)
         if mr.ok and mr.headers.get("content-type", "").startswith("image"):
             open(MAP_OUT, "wb").write(mr.content)
@@ -121,28 +153,30 @@ def main():
             print("静态地图下载失败：", mr.status_code, mr.text[:100])
     except Exception as e:
         print("静态地图下载失败：", repr(e))
-    except Exception:
-        pass
 
-    dates = sorted(os.path.basename(p)[:-5] for p in glob.glob(os.path.join(DATA, "20*.json"))
-                   if START <= os.path.basename(p)[:-5] <= END)
+    all_dates = sorted(os.path.basename(p)[:-5] for p in glob.glob(os.path.join(DATA, "20*.json")))
+    dates = [d for d in all_dates if START <= d <= END]
     trend = []
     for d in dates:
-        s = _load(os.path.join(DATA, d + ".json"))
+        cur = _load(os.path.join(DATA, d + ".json"))
+        idx = all_dates.index(d)
+        prev = _load(os.path.join(DATA, all_dates[idx - 1] + ".json")) if idx > 0 else {}
+        cs, ps = _ids(cur.get("ssb")), _ids(prev.get("ssb"))
+        cp, pp = _ids(cur.get("pd")), _ids(prev.get("pd"))
+        ssb_new = sum(1 for k in cs if k not in ps)
+        ssb_gone = sum(1 for k in ps if k not in cs)
+        pd_new = sum(1 for k in cp if k not in pp)
+        pd_gone = sum(1 for k in pp if k not in cp)
         trend.append({"d": d,
-                      "ssb": len(s.get("ssb") or []),
-                      "pd": len(s.get("pd") or []),
-                      "online": sum(_num(x.get("online")) for x in s.get("ssb") or []),
-                      "kzts": sum(_num(x.get("kzts")) for x in s.get("pd") or [])})
+                      "ssb": len(cs), "pd": len(cp),
+                      "online": sum(_num(x.get("online")) for x in cs.values()),
+                      "kzts": sum(_num(x.get("kzts")) for x in cp.values()),
+                      "ssb_change": ssb_new - ssb_gone,
+                      "pd_change": pd_new - pd_gone})
 
-    top = sorted(new_ssb, key=lambda x: -_num(x.get("online")))[:7]
-    top += sorted(new_pd, key=lambda x: -_num(x.get("kzts")))[:3]
-    top = top[:10]
-
-    def cards(items):
+    def cards(items, is_pd):
         h = []
-        for x in items:
-            is_pd = x in new_pd
+        for x in sorted(items, key=lambda y: -_num(y.get("kzts") if is_pd else y.get("online"))):
             src = "明珠在线" if is_pd else "随申办"
             cls = "pd" if is_pd else "ssb"
             metric = _num(x.get("kzts") if is_pd else x.get("online"))
@@ -158,6 +192,9 @@ def main():
                 f'<div class="new-addr">{x.get("addr") or ""}</div>'
                 f'<div class="new-rent">{rent or ""}</div></div>')
         return "".join(h)
+
+    ssb_cards = cards(new_ssb, False)
+    pd_cards = cards(new_pd, True)
 
     def gone_list(items):
         if not items:
@@ -205,6 +242,8 @@ def main():
         "pd": [x["pd"] for x in trend],
         "online": [x["online"] for x in trend],
         "kzts": [x["kzts"] for x in trend],
+        "ssb_change": [x["ssb_change"] for x in trend],
+        "pd_change": [x["pd_change"] for x in trend],
     }
     dist_data = {
         "labels": dist_order,
@@ -214,19 +253,22 @@ def main():
     source_data = {"ssb": len(new_ssb), "pd": len(new_pd)}
 
     dots = "".join(
-        f'<span class="map-dot {p["src"]}" style="left:{p["left"]}%;top:{p["top"]}%" title="{html_lib.escape(p["name"])}"></span>'
-        for p in projects)
+        f'<span class="map-dot {("gone" if p["kind"]=="gone" else p["src"])}" style="left:{p["left"]}%;top:{p["top"]}%" title="{html_lib.escape(p["name"])}"></span>'
+        for p in changed)
     html = PAGE
     html = html.replace("<!--SUMMARY-->", summary)
     html = html.replace("<!--KPIS-->", kpis)
-    html = html.replace("<!--CARDS-->", cards(top))
+    html = html.replace("<!--NEW_SSB-->", ssb_cards)
+    html = html.replace("<!--NEW_PD-->", pd_cards)
+    html = html.replace("<!--SSB_NEW_COUNT-->", str(len(new_ssb)))
+    html = html.replace("<!--PD_NEW_COUNT-->", str(len(new_pd)))
     html = html.replace("<!--GONE-->", gone_list(gone_ssb + gone_pd))
-    html = html.replace("<!--MAP_COUNT-->", str(len(projects)))
+    html = html.replace("<!--MAP_COUNT-->", str(len(changed)))
     html = html.replace("<!--NEW_COUNT-->", str(len(new_ssb) + len(new_pd)))
     html = html.replace("<!--TREND_DATA-->", json.dumps(trend_data, ensure_ascii=False))
     html = html.replace("<!--DIST_DATA-->", json.dumps(dist_data, ensure_ascii=False))
     html = html.replace("<!--SOURCE_DATA-->", json.dumps(source_data, ensure_ascii=False))
-    html = html.replace("<!--PROJECTS_DATA-->", json.dumps(projects, ensure_ascii=False))
+    html = html.replace("<!--PROJECTS_DATA-->", json.dumps(changed, ensure_ascii=False))
     html = html.replace("<!--MAP_DOTS-->", dots)
     html = html.replace("<!--START-->", START)
     html = html.replace("<!--END-->", END)
@@ -234,7 +276,7 @@ def main():
     os.makedirs(DATA, exist_ok=True)
     with open(OUT, "w") as f:
         f.write(html)
-    print(f"已生成 {OUT} · 新增项目地图 {len(projects)} 个 · 新增 {len(new_ssb)+len(new_pd)}")
+    print(f"已生成 {OUT} · 变化项目地图 {len(changed)} 个 · 新增 {len(new_ssb)+len(new_pd)}")
 
 
 PAGE = r'''<!DOCTYPE html>
@@ -284,6 +326,13 @@ h2{font-size:19px;margin:0}
 .chart-title{font-size:13px;font-weight:650;color:#334155;margin:0 0 8px}
 .chart-box{height:230px}
 .new-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:16px}
+.new-grid.small{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;padding:12px}
+.new-grid.small .new-card{padding:9px}
+.new-grid.small .new-name{font-size:12px;min-height:34px}
+.subhead{font-size:14px;font-weight:650;margin:14px 0 8px;color:#334155}
+.subhead span{display:inline-block;background:#eef4ff;color:#2563eb;border-radius:999px;font-size:11px;padding:2px 8px;margin-left:4px}
+.map-dot.gone{background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.18),0 2px 8px rgba(15,23,42,.35)}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .new-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff;min-width:0}
 .new-top{display:flex;justify-content:space-between;align-items:center;gap:6px}
 .badge{font-size:10px;color:#fff;border-radius:999px;padding:2px 7px;white-space:nowrap}
@@ -300,8 +349,8 @@ h2{font-size:19px;margin:0}
 .gone-item b{font-weight:600;color:#334155}.gone-item span{color:var(--muted);font-size:12px}.gone-item em{margin-left:auto;font-style:normal;color:#94a3b8;font-size:12px}
 .footer{text-align:center;color:#94a3b8;font-size:11px;line-height:1.8;padding:30px 0 0}
 .footer a{color:#94a3b8}
-@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.new-grid{grid-template-columns:repeat(3,1fr)}.chart-grid{grid-template-columns:1fr}}
-@media(max-width:600px){h1{font-size:26px}.kpis{grid-template-columns:1fr 1fr}.new-grid{grid-template-columns:1fr 1fr}.new-name{min-height:auto}#map{height:360px}}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.new-grid{grid-template-columns:repeat(3,1fr)}.new-grid.small{grid-template-columns:repeat(4,1fr)}.chart-grid{grid-template-columns:1fr}}
+@media(max-width:600px){h1{font-size:26px}.kpis{grid-template-columns:1fr 1fr}.new-grid,.new-grid.small{grid-template-columns:1fr 1fr}.new-name{min-height:auto}}
 </style>
 </head>
 <body>
@@ -315,19 +364,20 @@ h2{font-size:19px;margin:0}
 <div class="section"><div class="card"><div class="story"><!--SUMMARY--></div></div></div>
 
 <div class="section">
-  <div class="section-head"><h2>新增项目地图</h2><div class="hint">地图展示 <!--MAP_COUNT--> 个新增项目 · 两种颜色区分来源</div></div>
+  <div class="section-head"><h2>变化项目地图</h2><div class="hint">地图展示 <!--MAP_COUNT--> 个变化项目（新增 + 下架）· 圆点标注</div></div>
   <div class="card">
     <div class="map-wrap map-static"><img src="/monthly/map.png" alt="上海新增房源项目地图">
       <div class="map-dots"><!--MAP_DOTS--></div>
-      <div class="map-legend"><span class="legend-dot" style="background:#2563eb"></span>随申办　<span class="legend-dot" style="background:#f59e0b"></span>明珠在线</div>
+      <div class="map-legend"><span class="legend-dot" style="background:#2563eb"></span>随申办新增　<span class="legend-dot" style="background:#f59e0b"></span>明珠新增　<span class="legend-dot" style="background:#94a3b8"></span>下架</div>
     </div>
-    <div class="map-note">静态地图：每个圆点代表一个本月新增项目，颜色区分来源；项目明细见下方卡片。</div>
+    <div class="map-note">静态地图：蓝色/橙色为新增项目，灰色为下架项目；地图范围已按全部变化项目自适应。</div>
   </div>
 </div>
 
 <div class="section">
   <div class="section-head"><h2>一个月走势</h2><div class="hint">每日项目数量与房源供应变化</div></div>
   <div class="chart-grid">
+    <div class="card chart-card full"><div class="chart-title">项目数每日变化（新增 - 下架）</div><div class="chart-box"><canvas id="changeChart"></canvas></div></div>
     <div class="card chart-card full"><div class="chart-title">在线 / 可租房源走势</div><div class="chart-box"><canvas id="supplyChart"></canvas></div></div>
   </div>
 </div>
@@ -341,8 +391,9 @@ h2{font-size:19px;margin:0}
 </div>
 
 <div class="section">
-  <div class="section-head"><h2>新增亮点</h2><div class="hint">按当前在线/可租套数排序</div></div>
-  <div class="card"><div class="new-grid"><!--CARDS--></div></div>
+  <div class="section-head"><h2>新增亮点</h2><div class="hint">全量展示，按当前在线/可租套数排序</div></div>
+  <div class="new-block"><div class="subhead">随申办新增 <span><!--SSB_NEW_COUNT--></span></div><div class="card"><div class="new-grid small"><!--NEW_SSB--></div></div></div>
+  <div class="new-block"><div class="subhead">明珠在线新增 <span><!--PD_NEW_COUNT--></span></div><div class="card"><div class="new-grid small"><!--NEW_PD--></div></div></div>
 </div>
 
 <div class="section">
@@ -362,6 +413,10 @@ const SOURCE = <!--SOURCE_DATA-->;
 const PROJECTS = <!--PROJECTS_DATA-->;
 Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif';
 Chart.defaults.color = '#64748b';
+new Chart(document.getElementById('changeChart'), {type:'bar',data:{labels:TREND.labels,datasets:[
+ {label:'随申办净增',data:TREND.ssb_change,backgroundColor:'#2563eb',borderRadius:3},
+ {label:'明珠在线净增',data:TREND.pd_change,backgroundColor:'#f59e0b',borderRadius:3}
+]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}}},scales:{x:{ticks:{maxTicksLimit:8,font:{size:10}}},y:{beginAtZero:true,ticks:{maxTicksLimit:5,font:{size:10}}}}}});
 new Chart(document.getElementById('supplyChart'), {type:'line',data:{labels:TREND.labels,datasets:[
  {label:'随申办在线',data:TREND.online,borderColor:'#0f9d58',backgroundColor:'rgba(15,157,88,.08)',fill:true,tension:.3,borderWidth:2,pointRadius:0,yAxisID:'y'},
  {label:'明珠可租',data:TREND.kzts,borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.08)',fill:true,tension:.3,borderWidth:2,pointRadius:0,yAxisID:'y1'}
