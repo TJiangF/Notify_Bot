@@ -45,65 +45,65 @@ html,body{margin:0;padding:0;width:1240px;height:1754px;overflow:hidden;backgrou
 .topline{font-size:17px;color:#94a3b8;letter-spacing:.04em;margin-bottom:18px}
 .cover{background:linear-gradient(135deg,#0d2b5c 0%,#14508f 55%,#1c74b8 100%);color:#fff;
  border-radius:0 0 26px 26px;margin:-44px -48px 0;padding:54px 48px 42px}
-.tag{display:inline-block;font-size:15px;letter-spacing:.16em;background:rgba(255,255,255,.14);
+.tag{display:inline-block;font-size:16px;letter-spacing:.16em;background:rgba(255,255,255,.14);
  border:1px solid rgba(255,255,255,.28);padding:8px 16px;border-radius:999px}
 h1{font-size:54px;line-height:1.24;margin:20px 0 14px;letter-spacing:-.01em}
-.date{font-size:23px;color:#d7e7fa;line-height:1.7}
+.date{font-size:24px;color:#d7e7fa;line-height:1.7}
 .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:28px 0 20px}
 .kpi{border:1px solid var(--line);border-radius:14px;padding:16px;background:#fff}
-.kpi-label{font-size:17px;color:var(--muted)}
-.kpi-num{font-size:38px;font-weight:750;line-height:1.2;margin-top:3px}
-.kpi-delta{font-size:16px;color:var(--muted);margin-top:2px}
+.kpi-label{font-size:18px;color:var(--muted)}
+.kpi-num{font-size:40px;font-weight:750;line-height:1.2;margin-top:3px}
+.kpi-delta{font-size:17px;color:var(--muted);margin-top:2px}
 .kpi-delta.up{color:#0f9d58}.kpi-delta.down{color:var(--red)}
-h2{font-size:42px;margin:0 0 6px;letter-spacing:-.01em}
-.sub{font-size:21px;color:var(--muted);line-height:1.65;margin:0 0 16px}
-.summary{font-size:25px;line-height:1.85;color:#334155;border:1px solid var(--line);border-radius:16px;padding:25px 28px;background:#fff}
+h2{font-size:44px;margin:0 0 6px;letter-spacing:-.01em}
+.sub{font-size:22px;color:var(--muted);line-height:1.65;margin:0 0 16px}
+.summary{font-size:26px;line-height:1.85;color:#334155;border:1px solid var(--line);border-radius:16px;padding:25px 28px;background:#fff}
 .summary p{margin:0 0 12px}.summary p:last-child{margin-bottom:0}.summary b{color:var(--ink)}
 .foot{margin-top:auto;border-top:1px solid var(--line);padding-top:14px;font-size:15px;color:#94a3b8;line-height:1.7}
 .chart-block{margin-top:14px}
-.chart-title{font-size:25px;font-weight:650;margin:0 0 8px;color:#334155}
+.chart-title{font-size:27px;font-weight:650;margin:0 0 8px;color:#334155}
 .chart-holder{height:620px;border:1px solid var(--line);border-radius:16px;padding:10px 12px;background:#fff}
 .chart-row{display:grid;grid-template-columns:1.35fr .9fr;gap:16px;margin-top:8px}
-.chart-row .chart-holder{height:700px}
+.chart-row .chart-holder{height:740px}
 .insights{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.insight{border:1px solid var(--line);border-radius:14px;padding:17px 19px;font-size:21px;line-height:1.7;color:#334155;background:#fff}
+.insight{border:1px solid var(--line);border-radius:14px;padding:18px 20px;font-size:23px;line-height:1.7;color:#334155;background:#fff}
 .insight b{color:var(--ink)}
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
-.card{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:#fff;min-height:210px;display:flex;flex-direction:column;justify-content:center}
+.card{border:1px solid var(--line);border-radius:14px;padding:18px 20px;background:#fff;min-height:220px;display:flex;flex-direction:column;justify-content:center}
 .card-top{display:flex;justify-content:space-between;align-items:center}
-.badge{font-size:14px;color:#fff;border-radius:999px;padding:4px 11px}
+.badge{font-size:15px;color:#fff;border-radius:999px;padding:4px 11px}
 .badge.ssb{background:var(--blue)}.badge.pd{background:var(--orange)}
-.dist{font-size:16px;color:var(--muted)}
-.name{font-size:26px;font-weight:700;line-height:1.35;margin:8px 0 4px}
-.metric{font-size:22px;color:var(--muted)}.metric b{font-size:34px;color:var(--ink)}
-.addr{font-size:17px;color:#94a3b8;line-height:1.5;margin-top:6px;max-height:52px;overflow:hidden}
-.rent{font-size:17px;color:#b45309;margin-top:5px}
+.dist{font-size:17px;color:var(--muted)}
+.name{font-size:28px;font-weight:700;line-height:1.35;margin:8px 0 4px}
+.metric{font-size:24px;color:var(--muted)}.metric b{font-size:36px;color:var(--ink)}
+.addr{font-size:18px;color:#94a3b8;line-height:1.5;margin-top:6px;max-height:52px;overflow:hidden}
+.rent{font-size:18px;color:#b45309;margin-top:5px}
 .removed{display:grid;gap:10px;margin-top:10px}
-.gone{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:16px 19px;font-size:21px;color:#334155}
+.gone{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:17px 20px;font-size:23px;color:#334155}
 .gone .dot{width:11px;height:11px;border-radius:50%;background:var(--red);flex:0 0 auto}
 .gone em{margin-left:auto;font-style:normal;color:#94a3b8}
-.note{font-size:16px;color:#94a3b8;line-height:1.75;margin-top:14px}
+.note{font-size:17px;color:#94a3b8;line-height:1.75;margin-top:14px}
 .takeaways{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
 .takeaways.three{grid-template-columns:repeat(3,1fr)}
 .takeaway{border:1px solid var(--line);border-radius:16px;padding:20px 22px;background:#fff}
-.tk-num{font-size:54px;font-weight:800;line-height:1;color:var(--blue)}
+.tk-num{font-size:58px;font-weight:800;line-height:1;color:var(--blue)}
 .takeaway:nth-child(2) .tk-num{color:var(--orange)}
 .takeaway:nth-child(4) .tk-num{color:var(--red)}
-.tk-label{font-size:23px;font-weight:650;margin-top:9px}
-.tk-sub{font-size:18px;color:var(--muted);margin-top:3px}
-.conclusion{margin-top:18px;border:1px solid #cfe0ff;background:#f5f9ff;border-radius:16px;padding:20px 24px;font-size:25px;line-height:1.75;color:#334155}
+.tk-label{font-size:25px;font-weight:650;margin-top:9px}
+.tk-sub{font-size:19px;color:var(--muted);margin-top:3px}
+.conclusion{margin-top:18px;border:1px solid #cfe0ff;background:#f5f9ff;border-radius:16px;padding:21px 25px;font-size:27px;line-height:1.75;color:#334155}
 .conclusion b{color:#0b5cff}
 .pgroup{margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
-.pgroup-head{display:flex;align-items:baseline;gap:12px;background:#eef5ff;padding:7px 16px;font-size:21px;font-weight:700;color:#0d2b5c}
-.pgroup-head .cnt{font-size:16px;color:#64748b;font-weight:500;margin-left:auto}
+.pgroup-head{display:flex;align-items:baseline;gap:12px;background:#eef5ff;padding:8px 16px;font-size:24px;font-weight:700;color:#0d2b5c}
+.pgroup-head .cnt{font-size:17px;color:#64748b;font-weight:500;margin-left:auto}
 .prows{display:flex;flex-direction:column}
-.prow{display:flex;align-items:center;gap:18px;padding:7px 16px;border-top:1px solid #eef2f7}
+.prow{display:flex;align-items:center;gap:18px;padding:9px 16px;border-top:1px solid #eef2f7}
 .prow-main{flex:1;min-width:0}
-.pname{font-size:23px;font-weight:650;line-height:1.28;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.paddr{font-size:16px;color:#94a3b8;line-height:1.45;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pname{font-size:26px;font-weight:650;line-height:1.28;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.paddr{font-size:17px;color:#94a3b8;line-height:1.45;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .prow-side{flex:0 0 330px;text-align:right}
-.pmetric{font-size:18px;color:#64748b}.pmetric b{font-size:30px;color:var(--ink)}
-.prent{font-size:16px;color:#b45309;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pmetric{font-size:20px;color:#64748b}.pmetric b{font-size:34px;color:var(--ink)}
+.prent{font-size:17px;color:#b45309;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 """
 
 
@@ -201,11 +201,11 @@ Chart.defaults.color='#64748b';
 new Chart(document.getElementById('changeChart'),{type:'line',data:{labels:TREND.labels,datasets:[
 {label:'随申办净增',data:TREND.ssb_change,borderColor:'#0b5cff',backgroundColor:'rgba(11,92,255,.08)',fill:false,tension:.25,borderWidth:4,pointRadius:4,pointBackgroundColor:'#0b5cff'},
 {label:'明珠在线净增',data:TREND.pd_change,borderColor:'#ff7a00',backgroundColor:'rgba(255,122,0,.08)',fill:false,tension:.25,borderWidth:4,pointRadius:4,pointBackgroundColor:'#ff7a00'}
-]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,boxHeight:12,font:{size:20}}}},scales:{x:{ticks:{maxTicksLimit:8,font:{size:18}}},y:{beginAtZero:true,ticks:{font:{size:18}}}}}});
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,boxHeight:12,font:{size:21}}}},scales:{x:{ticks:{maxTicksLimit:8,font:{size:19}}},y:{beginAtZero:true,ticks:{font:{size:19}}}}}});
 new Chart(document.getElementById('supplyChart'),{type:'line',data:{labels:TREND.labels,datasets:[
 {label:'随申办在线',data:TREND.online,borderColor:'#0f9d58',backgroundColor:'rgba(15,157,88,.08)',fill:true,tension:.3,borderWidth:4,pointRadius:0,yAxisID:'y'},
 {label:'明珠可租',data:TREND.kzts,borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.08)',fill:true,tension:.3,borderWidth:4,pointRadius:0,yAxisID:'y1'}
-]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,boxHeight:12,font:{size:20}}}},scales:{x:{ticks:{maxTicksLimit:8,font:{size:18}}},y:{position:'left',ticks:{font:{size:18}}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{font:{size:18}}}}}});
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,boxHeight:12,font:{size:21}}}},scales:{x:{ticks:{maxTicksLimit:8,font:{size:19}}},y:{position:'left',ticks:{font:{size:19}}},y1:{position:'right',grid:{drawOnChartArea:false},ticks:{font:{size:19}}}}}});
 </script>''' % json.dumps(tr, ensure_ascii=False)
 
     p2 = page("一个月走势", '''<h2>一个月走势</h2><p class="sub">逐日项目数变化，以及在线房源与明珠可租房源走势。</p>
@@ -223,8 +223,8 @@ Chart.defaults.font.family='-apple-system,BlinkMacSystemFont,"PingFang SC","Micr
 new Chart(document.getElementById('districtChart'),{type:'bar',data:{labels:DIST.labels,datasets:[
 {label:'随申办',data:DIST.ssb,backgroundColor:'#0b5cff',borderRadius:5},
 {label:'明珠在线',data:DIST.pd,backgroundColor:'#ff7a00',borderRadius:5}
-]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:13,boxHeight:13,font:{size:20}}}},scales:{x:{stacked:true,ticks:{font:{size:18}}},y:{stacked:true,beginAtZero:true,ticks:{font:{size:18}}}}}});
-new Chart(document.getElementById('sourceChart'),{type:'doughnut',data:{labels:['随申办','明珠在线'],datasets:[{data:[%d,%d],backgroundColor:['#0b5cff','#ff7a00'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%%',plugins:{legend:{position:'bottom',labels:{boxWidth:13,boxHeight:13,font:{size:20}}}}}});
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:13,boxHeight:13,font:{size:21}}}},scales:{x:{stacked:true,ticks:{font:{size:19}}},y:{stacked:true,beginAtZero:true,ticks:{font:{size:19}}}}}});
+new Chart(document.getElementById('sourceChart'),{type:'doughnut',data:{labels:['随申办','明珠在线'],datasets:[{data:[%d,%d],backgroundColor:['#0b5cff','#ff7a00'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%%',plugins:{legend:{position:'bottom',labels:{boxWidth:13,boxHeight:13,font:{size:21}}}}}});
 </script>''' % (json.dumps(dist_data, ensure_ascii=False), len(new_ssb), len(new_pd))
 
     p3 = page("新增项目分布", f'''<h2>新增项目分布</h2><p class="sub">全区新增 {len(new_ssb)+len(new_pd)} 个项目，随申办 {len(new_ssb)} 个、明珠在线 {len(new_pd)} 个。</p>
