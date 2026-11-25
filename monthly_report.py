@@ -18,8 +18,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
 OUT = os.path.join(DATA, "monthly.html")
 MAP_OUT = os.path.join(DATA, "monthly_map.png")
-START = "2026-10-21"
-END = "2026-11-21"
+START = "2026-10-25"
+END = "2026-11-25"
 
 
 def _load(path, default=None):
