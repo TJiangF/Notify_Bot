@@ -989,6 +989,22 @@ def render_dashboard(request, msg=""):
     return _shell(inner, request)
 
 
+@app.get("/monthly/a4/{name}")
+def monthly_a4_asset(name: str):
+    if name == "a4.zip":
+        p = os.path.join(DATA_DIR, "monthly_pages", "a4.zip")
+        if not os.path.exists(p):
+            return Response(status_code=404)
+        return Response(content=open(p, "rb").read(), media_type="application/zip")
+    if not re.match(r"^[1-7]\.(html|png)$", name or ""):
+        return Response(status_code=404)
+    p = os.path.join(DATA_DIR, "monthly_pages", name)
+    if not os.path.exists(p):
+        return Response(status_code=404)
+    media = "text/html; charset=utf-8" if name.endswith(".html") else "image/png"
+    return Response(content=open(p, "rb").read(), media_type=media)
+
+
 @app.get("/monthly/map.png")
 def monthly_map_image():
     p = os.path.join(DATA_DIR, "monthly_map.png")
