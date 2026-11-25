@@ -84,6 +84,7 @@ h2{font-size:34px;margin:0 0 6px;letter-spacing:-.01em}
 .gone em{margin-left:auto;font-style:normal;color:#94a3b8}
 .note{font-size:14px;color:#94a3b8;line-height:1.8;margin-top:16px}
 .takeaways{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+.takeaways.three{grid-template-columns:repeat(3,1fr)}
 .takeaway{border:1px solid var(--line);border-radius:16px;padding:18px 22px;background:#fff}
 .tk-num{font-size:46px;font-weight:800;line-height:1;color:var(--blue)}
 .takeaway:nth-child(2) .tk-num{color:var(--orange)}
@@ -171,6 +172,8 @@ def main():
 <div class="takeaway"><div class="tk-num">+2,811</div><div class="tk-label">随申办在线房源净增</div><div class="tk-sub">在线总量升至 313,321 套</div></div>
 <div class="takeaway"><div class="tk-num">3</div><div class="tk-label">本月下架项目</div><div class="tk-sub">整体供应仍在净扩张</div></div>
 </div>
+<div class="conclusion"><b>一句话总结：</b>随申办供应继续放量，杨浦与浦东贡献近六成新增；明珠在线保持平稳。</div>
+<div class="note" style="font-size:16px;color:#64748b">关键词：杨浦领跑 · 浦东扩容 · 在线净增 · 供应扩张</div>
 <div class="foot">数据来源：随申办 · 明珠在线　｜　统计区间：{START} 至 {END}　｜　关注新增、下架、在线与可租变化。</div>''', no=1, top=False)
 
     tr = {"labels": [x["d"][5:] for x in trend],
@@ -196,7 +199,8 @@ new Chart(document.getElementById('supplyChart'),{type:'line',data:{labels:TREND
 
     p2 = page("一个月走势", '''<h2>一个月走势</h2><p class="sub">逐日项目数变化，以及在线房源与明珠可租房源走势。</p>
 <div class="chart-block"><div class="chart-title">项目数每日变化（新增 - 下架）</div><div class="chart-holder"><canvas id="changeChart"></canvas></div></div>
-<div class="chart-block"><div class="chart-title">在线 / 可租房源走势</div><div class="chart-holder"><canvas id="supplyChart"></canvas></div></div>''', chart_js, no=2)
+<div class="chart-block"><div class="chart-title">在线 / 可租房源走势</div><div class="chart-holder"><canvas id="supplyChart"></canvas></div></div>
+<div class="conclusion"><b>观察：</b>项目数在 11 月中旬出现集中新增，在线房源同步抬升；月末明珠可租小幅回落。</div>''', chart_js, no=2)
 
     dist_data = {"labels": dist_order,
                  "ssb": [sum(1 for x in new_ssb if (x.get("district") or "未知") == d) for d in dist_order],
@@ -219,7 +223,12 @@ new Chart(document.getElementById('sourceChart'),{type:'doughnut',data:{labels:[
 <div class="insight"><b>浦东新区</b>新增 9 个，其中明珠在线 3 个，2 个为预供应。</div>
 <div class="insight"><b>奉贤区</b>新增 5 个，是外环外新增供应的主要区域。</div>
 <div class="insight"><b>整体节奏</b>新增项目 43 个，下架仅 3 个，供应仍在净扩张。</div></div>
-<div class="conclusion"><b>一句话总结：</b>杨浦领跑新增，浦东继续扩容；随申办在线房源净增 2,811 套，整体供应保持扩张。</div>''', dist_js, no=3)
+<div class="conclusion"><b>一句话总结：</b>杨浦领跑新增，浦东继续扩容；随申办在线房源净增 2,811 套，整体供应保持扩张。</div>
+<div class="takeaways three" style="margin-top:14px">
+<div class="takeaway"><div class="tk-num">40</div><div class="tk-label">随申办新增</div><div class="tk-sub">占新增项目 93%</div></div>
+<div class="takeaway"><div class="tk-num">3</div><div class="tk-label">明珠在线新增</div><div class="tk-sub">全部位于浦东</div></div>
+<div class="takeaway"><div class="tk-num">3</div><div class="tk-label">本月下架</div><div class="tk-sub">净增远大于下架</div></div>
+</div>''', dist_js, no=3)
 
     # card pages: 14, 13, 13
     def card(x, is_pd):
@@ -245,6 +254,11 @@ new Chart(document.getElementById('sourceChart'),{type:'doughnut',data:{labels:[
 <h2 style="margin-top:26px">本月下架 · {len(gone_ssb)+len(gone_pd)} 个</h2>
 <div class="removed">{''.join(f'<div class="gone"><span class="dot"></span><b>{H.escape(x.get("name") or "")}</b><span>{H.escape(x.get("district") or "")}</span><em>{num(x.get("online") if x in gone_ssb else x.get("kzts")):,} 套</em></div>' for x in (gone_ssb+gone_pd))}</div>
 <div class="conclusion"><b>本期结论：</b>明珠新增 3 个项目全部位于浦东，其中 2 个为预供应；本月仅 3 个项目下架，整体保持稳定。</div>
+<div class="takeaways three" style="margin-top:14px">
+<div class="takeaway"><div class="tk-num">3</div><div class="tk-label">明珠新增</div><div class="tk-sub">全部位于浦东</div></div>
+<div class="takeaway"><div class="tk-num">2</div><div class="tk-label">预供应项目</div><div class="tk-sub">提前释放供应信号</div></div>
+<div class="takeaway"><div class="tk-num">3</div><div class="tk-label">本月下架</div><div class="tk-sub">整体供应保持稳定</div></div>
+</div>
 <div class="note">说明：新增项目按当前在线/可租套数排序；下架项目按最后快照数据统计。数据来源为随申办与明珠在线公开房源信息。</div>'''
     with open(os.path.join(OUTDIR, "7.html"), "w") as f:
         f.write(page("明珠在线新增与本月下架", pd_body, no=7))
