@@ -62,9 +62,9 @@ h2{font-size:34px;margin:0 0 6px;letter-spacing:-.01em}
 .foot{margin-top:auto;border-top:1px solid var(--line);padding-top:14px;font-size:13px;color:#94a3b8;line-height:1.7}
 .chart-block{margin-top:14px}
 .chart-title{font-size:21px;font-weight:650;margin:0 0 8px;color:#334155}
-.chart-holder{height:500px;border:1px solid var(--line);border-radius:16px;padding:10px 12px;background:#fff}
+.chart-holder{height:620px;border:1px solid var(--line);border-radius:16px;padding:10px 12px;background:#fff}
 .chart-row{display:grid;grid-template-columns:1.35fr .9fr;gap:16px;margin-top:8px}
-.chart-row .chart-holder{height:560px}
+.chart-row .chart-holder{height:720px}
 .insights{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .insight{border:1px solid var(--line);border-radius:14px;padding:16px 18px;font-size:18px;line-height:1.75;color:#334155;background:#fff}
 .insight b{color:var(--ink)}
@@ -83,6 +83,15 @@ h2{font-size:34px;margin:0 0 6px;letter-spacing:-.01em}
 .gone .dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex:0 0 auto}
 .gone em{margin-left:auto;font-style:normal;color:#94a3b8}
 .note{font-size:14px;color:#94a3b8;line-height:1.8;margin-top:16px}
+.takeaways{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+.takeaway{border:1px solid var(--line);border-radius:16px;padding:18px 22px;background:#fff}
+.tk-num{font-size:46px;font-weight:800;line-height:1;color:var(--blue)}
+.takeaway:nth-child(2) .tk-num{color:var(--orange)}
+.takeaway:nth-child(4) .tk-num{color:var(--red)}
+.tk-label{font-size:19px;font-weight:650;margin-top:8px}
+.tk-sub{font-size:15px;color:var(--muted);margin-top:2px}
+.conclusion{margin-top:18px;border:1px solid #cfe0ff;background:#f5f9ff;border-radius:16px;padding:20px 24px;font-size:21px;line-height:1.9;color:#334155}
+.conclusion b{color:#0b5cff}
 """
 
 
@@ -156,6 +165,12 @@ def main():
     p1 = page(TITLE, f'''<div class="cover"><span class="tag">上海保租房 · 月度观察</span>
 <h1>{TITLE}</h1><div class="date">2026-10-25 — 2026-11-25　｜　随申办 × 明珠在线</div></div>
 {kpis}{summary}
+<div class="takeaways">
+<div class="takeaway"><div class="tk-num">16</div><div class="tk-label">杨浦区新增项目</div><div class="tk-sub">全市最多，领跑本月供应</div></div>
+<div class="takeaway"><div class="tk-num">9</div><div class="tk-label">浦东新区新增项目</div><div class="tk-sub">明珠在线 3 个，2 个为预供应</div></div>
+<div class="takeaway"><div class="tk-num">+2,811</div><div class="tk-label">随申办在线房源净增</div><div class="tk-sub">在线总量升至 313,321 套</div></div>
+<div class="takeaway"><div class="tk-num">3</div><div class="tk-label">本月下架项目</div><div class="tk-sub">整体供应仍在净扩张</div></div>
+</div>
 <div class="foot">数据来源：随申办 · 明珠在线　｜　统计区间：{START} 至 {END}　｜　关注新增、下架、在线与可租变化。</div>''', no=1, top=False)
 
     tr = {"labels": [x["d"][5:] for x in trend],
@@ -203,7 +218,8 @@ new Chart(document.getElementById('sourceChart'),{type:'doughnut',data:{labels:[
 <div class="insights"><div class="insight"><b>杨浦区</b>新增最多，共 16 个，主要集中在新江湾城周边。</div>
 <div class="insight"><b>浦东新区</b>新增 9 个，其中明珠在线 3 个，2 个为预供应。</div>
 <div class="insight"><b>奉贤区</b>新增 5 个，是外环外新增供应的主要区域。</div>
-<div class="insight"><b>整体节奏</b>新增项目 43 个，下架仅 3 个，供应仍在净扩张。</div></div>''', dist_js, no=3)
+<div class="insight"><b>整体节奏</b>新增项目 43 个，下架仅 3 个，供应仍在净扩张。</div></div>
+<div class="conclusion"><b>一句话总结：</b>杨浦领跑新增，浦东继续扩容；随申办在线房源净增 2,811 套，整体供应保持扩张。</div>''', dist_js, no=3)
 
     # card pages: 14, 13, 13
     def card(x, is_pd):
@@ -228,6 +244,7 @@ new Chart(document.getElementById('sourceChart'),{type:'doughnut',data:{labels:[
 <div class="cards">{''.join(card(x, True) for x in new_pd)}</div>
 <h2 style="margin-top:26px">本月下架 · {len(gone_ssb)+len(gone_pd)} 个</h2>
 <div class="removed">{''.join(f'<div class="gone"><span class="dot"></span><b>{H.escape(x.get("name") or "")}</b><span>{H.escape(x.get("district") or "")}</span><em>{num(x.get("online") if x in gone_ssb else x.get("kzts")):,} 套</em></div>' for x in (gone_ssb+gone_pd))}</div>
+<div class="conclusion"><b>本期结论：</b>明珠新增 3 个项目全部位于浦东，其中 2 个为预供应；本月仅 3 个项目下架，整体保持稳定。</div>
 <div class="note">说明：新增项目按当前在线/可租套数排序；下架项目按最后快照数据统计。数据来源为随申办与明珠在线公开房源信息。</div>'''
     with open(os.path.join(OUTDIR, "7.html"), "w") as f:
         f.write(page("明珠在线新增与本月下架", pd_body, no=7))
