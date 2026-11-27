@@ -554,8 +554,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
  .btn-reset{{font-size:13px;padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#666;cursor:pointer}}
  .btn-reset:hover{{border-color:#f43f5e;color:#f43f5e}}
  .listhead{{display:flex;justify-content:space-between;align-items:center;margin:16px 0 4px}}
+ .pv-hidden{{display:none!important}}
  .listhead h3{{margin:0}}
- .listwrap{{display:none}}
+ .listwrap{{display:block}}
  .tbtn{{font-size:13px;padding:5px 12px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#2563eb;cursor:pointer}}
  .tbtn:hover{{border-color:#2563eb}}
  .hright{{display:flex;gap:10px;align-items:center}}
@@ -729,9 +730,9 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 {user_area}
 <a class="sb-link" href="#sec-top">概览</a>
 <a class="sb-link" href="#sec-map">智能找房</a>
+<a class="sb-link" href="#sec-all">房源明细</a>
 <a class="sb-link" href="#sec-chg">变动明细</a>
 <a class="sb-link" href="#sec-notice">供应预告</a>
-<a class="sb-link" href="#sec-all">房源明细</a>
 <a class="sb-link" href="#sec-ssb">随申办·行政区</a>
 <a class="sb-link" href="#sec-pd">明珠在线·行政区</a>
 <a class="sb-link" href="#sec-trend">逐日趋势</a>
@@ -751,6 +752,21 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2 id="sec-map">🧭 智能找房</h2>
 {map_block}
 
+<h2 id="sec-all">房源明细</h2>
+<div class="box">
+<div class="allbox">
+<div class="listhead"><h3>随申办</h3><div class="hright"><div class="searchbox"><input id="sb_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="sb_clr">×</button><div id="sb_sug" class="sug"></div></div><button type="button" class="tbtn" id="sb_toggle" onclick="toggleList('sbwrap',this)">查看全部 {tot_ssb} 个 ▾</button></div></div>
+<div class="filters">{ssb_filter}</div>
+<div class="listwrap" id="sbwrap"><ul class="pdlist" id="sblist">{ssb_items}</ul></div>
+</div>
+<div class="allbox">
+<div class="listhead"><h3>明珠在线</h3><div class="hright"><div class="searchbox"><input id="pd_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="pd_clr">×</button><div id="pd_sug" class="sug"></div></div><button type="button" class="tbtn" id="pd_toggle" onclick="toggleList('pdwrap',this)">查看全部 {tot_pd} 个 ▾</button></div></div>
+<div class="note note-top">* 可租套数按接口字段（kzts）提取，仅供参考，不保证当前有房。</div>
+<div class="filters">{pd_filter}</div>
+<div class="listwrap" id="pdwrap"><ul class="pdlist" id="pdlist">{pd_items}</ul></div>
+</div>
+</div>
+
 <h2 id="sec-chg">变动明细（当前 vs 基线）</h2>
 <div class="box">
 {detail("随申办", ssb_ch)}
@@ -760,21 +776,6 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 <h2 id="sec-notice">随申办 · 供应预告（{len(notice)}）</h2>
 <table><thead><tr><th>项目</th><th>计划供应日</th><th>租金</th><th>地址</th><th>电话</th><th>运营单位</th></tr></thead>
 <tbody>{notice_table}</tbody></table>
-
-<h2 id="sec-all">房源明细</h2>
-<div class="box">
-<div class="allbox">
-<div class="listhead"><h3>随申办</h3><div class="hright"><div class="searchbox"><input id="sb_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="sb_clr">×</button><div id="sb_sug" class="sug"></div></div><button type="button" class="tbtn" onclick="toggleList('sbwrap',this)">展开列表 ▾</button></div></div>
-<div class="filters">{ssb_filter}</div>
-<div class="listwrap" id="sbwrap"><ul class="pdlist" id="sblist">{ssb_items}</ul></div>
-</div>
-<div class="allbox">
-<div class="listhead"><h3>明珠在线</h3><div class="hright"><div class="searchbox"><input id="pd_q" class="q" placeholder="搜索项目名"><button type="button" class="qclear" id="pd_clr">×</button><div id="pd_sug" class="sug"></div></div><button type="button" class="tbtn" onclick="toggleList('pdwrap',this)">展开列表 ▾</button></div></div>
-<div class="note note-top">* 可租套数按接口字段（kzts）提取，仅供参考，不保证当前有房。</div>
-<div class="filters">{pd_filter}</div>
-<div class="listwrap" id="pdwrap"><ul class="pdlist" id="pdlist">{pd_items}</ul></div>
-</div>
-</div>
 
 <h2 id="sec-ssb">随申办 · 按行政区</h2>
 <table><thead><tr><th>行政区</th><th>项目数</th><th>在线房源</th><th>新增</th><th>下架</th><th>套数变化</th></tr></thead>
@@ -832,6 +833,23 @@ def render_html(latest, prev, snaps, base_options=None, selected_base=None,
 {amap_script}
 <script>
 {js_vars}
+var LISTSTATE={{sb:{{expanded:false}},pd:{{expanded:false}}}};
+function applyPreview(src){{
+  var list=document.getElementById(src+'list');
+  var btn=document.getElementById(src+'_toggle');
+  if(!list) return;
+  var items=Array.prototype.slice.call(list.querySelectorAll('.pditem'));
+  items.forEach(function(li){{ li.classList.remove('pv-hidden'); }});
+  var matches=items.filter(function(li){{ return li.style.display!=='none'; }});
+  if(!LISTSTATE[src].expanded){{
+    matches.slice(5).forEach(function(li){{ li.classList.add('pv-hidden'); }});
+  }}
+  if(btn){{
+    if(LISTSTATE[src].expanded) btn.textContent='收起至 5 条 ▴';
+    else if(matches.length>5) btn.textContent='查看全部 '+matches.length+' 个 ▾';
+    else btn.textContent='共 '+matches.length+' 个';
+  }}
+}}
 function filterSb(){{
   var mn=parseFloat((document.getElementById('sb_fmin')||{{}}).value); if(isNaN(mn)) mn=0;
   var mx=parseFloat((document.getElementById('sb_fmax')||{{}}).value); if(isNaN(mx)) mx=Infinity;
@@ -860,9 +878,10 @@ function filterSb(){{
     var okM=mAll||(mc>0&&mkeys.some(function(t){{ return ml.indexOf(t)>=0; }}));
     li.style.display=(okP&&okT&&okH&&okA&&okM)?'':'none';
   }});
+  applyPreview('sb');
 }}
-function applySb(){{ var w=document.getElementById('sbwrap'); if(w) w.style.display='block'; setToggle('sbwrap','收起列表 ▴'); filterSb(); }}
-function applyPd(){{ var w=document.getElementById('pdwrap'); if(w) w.style.display='block'; setToggle('pdwrap','收起列表 ▴'); filterPd(); }}
+function applySb(){{ LISTSTATE.sb.expanded=true; filterSb(); }}
+function applyPd(){{ LISTSTATE.pd.expanded=true; filterPd(); }}
 function setToggle(wrapId, txt){{ document.querySelectorAll('.tbtn').forEach(function(b){{ if((b.getAttribute('onclick')||'').indexOf(wrapId)>=0) b.textContent=txt; }}); }}
 function resetSb(){{
   var a=document.getElementById('sb_fmin'); if(a) a.value='';
@@ -870,12 +889,14 @@ function resetSb(){{
   document.querySelectorAll('.sb_t,.sb_h,.sb_d,.sb_m').forEach(function(c){{ c.checked=false; }});
   var mall=document.getElementById('sb_m_all'); if(mall) mall.checked=true;
   if(window.__sbRange) window.__sbRange();
+  LISTSTATE.sb.expanded=false;
   filterSb();
 }}
 function resetPd(){{
   var a=document.getElementById('pd_fmin'); if(a) a.value='';
   var b=document.getElementById('pd_fmax'); if(b) b.value='';
   document.querySelectorAll('.pd_h,.pd_m,.pd_s').forEach(function(c){{ c.checked=false; }});
+  LISTSTATE.pd.expanded=false;
   filterPd();
 }}
 function bindRange(pfx){{
@@ -934,12 +955,12 @@ function filterPd(){{
     var okF=!hn||hkeys.some(function(t){{ return fy.indexOf(t)>=0; }});
     li.style.display=(okP&&okM&&okS&&okF)?'':'none';
   }});
+  applyPreview('pd');
 }}
 function toggleList(id, btn){{
-  var el=document.getElementById(id);
-  if(!el) return;
-  if(el.style.display==='block'){{ el.style.display='none'; btn.textContent='展开列表 ▾'; }}
-  else {{ el.style.display='block'; btn.textContent='收起列表 ▴'; }}
+  var src=(id==='sbwrap')?'sb':'pd';
+  LISTSTATE[src].expanded=!LISTSTATE[src].expanded;
+  applyPreview(src);
 }}
 function toggleNav(){{
   var el=document.getElementById('sidebar');
